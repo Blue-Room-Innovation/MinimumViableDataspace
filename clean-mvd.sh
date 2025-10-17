@@ -78,13 +78,6 @@ else
 fi
 echo
 
-# -----------------------------------------------------
-# 5️⃣ Remove unused Docker resources (optional)
-# -----------------------------------------------------
-echo "🧼 Pruning unused Docker images, volumes, and networks..."
-docker system prune -a -f --volumes >/dev/null 2>&1 || true
-echo "✅ Docker system cleaned."
-echo
 
 # -----------------------------------------------------
 # 6️⃣ Final summary

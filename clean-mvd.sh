@@ -78,13 +78,6 @@ else
 fi
 echo
 
-# -----------------------------------------------------
-# 5️⃣ Remove unused Docker resources (optional)
-# -----------------------------------------------------
-echo "🧼 Pruning unused Docker images, volumes, and networks..."
-docker system prune -a -f --volumes >/dev/null 2>&1 || true
-echo "✅ Docker system cleaned."
-echo
 
 # -----------------------------------------------------
 # 6️⃣ Final summary
@@ -93,6 +86,5 @@ echo "✨ Environment cleanup completed!"
 echo "--------------------------------------"
 echo "🧩 Cluster '${CLUSTER_NAME}': removed"
 echo "📦 Terraform state: deleted"
-echo "🐳 Docker system: pruned"
 echo "--------------------------------------"
 echo "✅ Your system is now clean and ready for a fresh deployment."

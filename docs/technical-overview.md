@@ -4,38 +4,19 @@ Este documento ofrece una visión rápida de la arquitectura del Minimum Viable 
 
 ## 1. Arquitectura general
 
+
+
 El escenario contempla dos participantes (Consumidor y Proveedor) conectados a un “dataspace issuer” que publica el DID raíz de la federación. Cada participante empaqueta los siguientes servicios:
 
-- Control plane de EDC: contratos, catálogos y APIs de gestión.
-- Data plane de EDC: transferencia y exposición de datos.
-- Identity Hub: almacén de credenciales y DIDs, con STS embebido.
-- Secure Token Service (STS): emisión de tokens OAuth2.
-- Hashicorp Vault (dev): almacén de secretos y claves.
-- PostgreSQL: persistencia de contratos, transferencias e identidad.
-- HTTP server: datos de ejemplo publicados como API REST.
+- Control Plane de EDC: API para gestionar contratos y catálogos.
+- Data Plane de EDC: Gestión de la transferencia y exposición de datos.
+- Identity Hub: Identity Hub: Gestiona los DIDs y credenciales Verificables (VCs).
+- Secure Token Service (STS): Servicio independiente (en Kubernetes) o embebido en el Control Plane en modo IntelliJ.
+- Hashicorp Vault (dev): Almacén de claves y secretos.
+- PostgreSQL: Base de datos persistente para contratos, transferencias e identidad.
+- Catalog Server: Servicio para consultar el catálogo de activos (en lugar de un HTTP server).
 
-```
-                          +-----------------------------+
-                          |  Dataspace Issuer (NGINX)    |
-                          |  DID document, puerto 9876   |
-                          +--------------+--------------+
-                                         |
-             +---------------------------+---------------------------+
-             |                                                           |
-      +------v------+                                             +------v------+
-      | Consumidor  |                                             | Proveedor   |
-      | ------------|                                             | ------------|
-      | Control plane|<------ APIs DSP / gestión ----->| Control plane|
-      | Data plane   |                                 | Data plane   |
-      | Identity Hub |--- credenciales / STS ---+      | Identity Hub |
-      | STS         |                            |      | STS         |
-      | Vault       |                            |      | Vault       |
-      | Postgres    |                            |      | Postgres    |
-      | HTTP server |                            |      | HTTP server |
-      +-------------+                            |      +-------------+
-                                                 |
-                                                 +-- DID compartido --+
-```
+![alt text](image.png)
 
 ## 2. Servicios y puertos
 
@@ -49,7 +30,7 @@ El escenario contempla dos participantes (Consumidor y Proveedor) conectados a u
 | Postgres (control)    | Consumidor 5433 · Proveedor 5435               | Persistencia de contratos, assets y transferencias. |
 | Postgres (identidad)  | Consumidor 5434 · Proveedor 5436               | Persistencia del Identity Hub. |
 | HTTP server           | 8888                                          | API REST con los datos de ejemplo. |
-| UI to Connector       | 3001 (cons.) · 3000 (prov.)                    | Interfaz web para invocar las APIs del conector. |
+
 | Dataspace issuer      | 9876                                          | NGINX que publica el DID raíz alojado en `deployment/assets/issuer`. |
 
 Nota: si se ejecutan las imágenes en contenedores, los puertos internos pueden mapearse a otros externos según el `docker-compose` que utilices.

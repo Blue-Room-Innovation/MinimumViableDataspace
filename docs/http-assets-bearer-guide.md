@@ -130,7 +130,7 @@ Uso recomendado para entornos reales o rotaciones frecuentes.
 | `method`         | Metodo HTTP fijo cuando no se proxyfica el metodo (por defecto `GET`).                       |
 | `proxyMethod`    | Si es `"true"` y la transferencia es `PULL`, usa el metodo recibido del consumidor.          |
 | `path`           | Ruta fija añadida al `baseUrl` cuando `proxyPath` es `"false"`.                              |
-| `proxyPath`      | Replica el path recibido del consumidor. En `PULL` añade `/data/{transferId}` al `baseUrl`.  |
+| `proxyPath`      | Replica el path recibido del consumidor. Copia todo lo que vaya tras `/api/public/` en la solicitud al dataplane y lo concatena al `baseUrl`.  |
 | `queryParams`    | Parametros fijos que se añaden a la llamada.                                                 |
 | `proxyQueryParams` | Añade los parametros de query enviados por el consumidor.                                 |
 | `contentType`    | Cabecera `Content-Type` fija (solo si no se proxyfica el cuerpo).                            |
@@ -167,6 +167,14 @@ El dataplane validara el token de la EDR, resolvera `secure-api` en Vault y envi
 
 > Consejo: si tu API no acepta el sufijo `/data/<transferId>`, desactiva `proxyPath` o define `path` con la ruta exacta.
 
+### Como funciona realmente `proxyPath`
+
+- El dataplane publica todo bajo `.../api/public/**`. Con `proxyPath = "true"` copia literalmente el tramo que vaya **despues de `/api/public/`** y lo concatena al `baseUrl`.
+- Ejemplo dinamico: con `baseUrl = https://api.circularpass.io/api/secure/v1` y `proxyPath = "true"`, si el consumidor invoca  
+  `GET .../api/public/data/<tpId>/instances/did%3A...`, el dataplane llamara a `https://api.circularpass.io/api/secure/v1/instances/did%3A...`.
+- Ejemplo estatico: con `proxyPath = "false"` y `baseUrl = https://api.circularpass.io/api/secure/v1/instances`, cualquier llamada a `.../api/public/...` terminara en `https://api.circularpass.io/api/secure/v1/instances`. Usa este modo cuando tu backend expone una ruta fija (como en el ejemplo de CircularPass sin ruta dinamica).
+- Si llamas al dataplane sin añadir nada tras `/api/public/` y tienes `proxyPath = "true"`, el sufijo sera exactamente lo que hayas enviado (p.ej. `data/<tpId>`). Si la API origen no admite ese sufijo, desactiva `proxyPath` o construye la ruta completa en la llamada del consumidor.
+
 ---
 
 ## 4. Consumir el asset tras la transferencia
@@ -183,13 +191,15 @@ El dataplane validara el token de la EDR, resolvera `secure-api` en Vault y envi
    - `endpoint`: URL base del dataplane del proveedor (ej. `http://provider-qna-dataplane:11002/api/public`).
    - `authorization`: token temporal que el consumidor debe usar.
 
-3. Para peticiones `PULL`, la URL real es `GET {endpoint}/data/{transferProcessId}`. A traves del ingress local del MVD:
+3. Para peticiones `PULL`, el patron recomendado es `GET {endpoint}/data/{transferProcessId}` porque es el que contemplan las validaciones de acceso. A traves del ingress local del MVD:
 
    ```bash
    curl -X GET \
         http://localhost/provider-qna/public/api/public/data/<transferProcessId> \
         -H "Authorization: <token-EDR>"
    ```
+
+   Con la configuracion por defecto del MVD (access control permisivo) tambien puedes omitir el `transferProcessId` y llamar directamente a `http://localhost/provider-qna/public/api/public`; el dataplane seguira invocando `baseUrl` o `baseUrl + path`. Ten en cuenta que despliegues con controles mas estrictos suelen exigir el formato con `/data/<transferProcessId>`.
 
 4. Para listar transferencias recientes ordenadas:
 

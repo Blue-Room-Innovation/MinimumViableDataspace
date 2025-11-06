@@ -1,18 +1,19 @@
-# Guía para exponer assets HTTP con Bearer Token en el MVD
+# Guia HTTP Assets con Bearer Token (MVD)
 
-Este documento describe cómo publicar un asset `HttpData` en el entorno **Minimum Viable Dataspace (MVD)** desplegado en Kubernetes, de forma que el dataplane pueda acceder a un endpoint protegido con **Bearer Token**. Incluye:
+Esta guia resume como exponer un asset `HttpData` en el **Minimum Viable Dataspace (MVD)** cuando el backend requiere un Bearer Token. Cubre:
 
-- Creación y actualización del asset usando la Management API.
-- Gestión del token (temporal o persistente) mediante HashiCorp Vault.
-- Consideraciones para peticiones `GET` y `POST`, incluyendo el tratamiento del `body`.
+- Creacion y actualizacion del asset mediante la Management API.
+- Almacenamiento del token en HashiCorp Vault y su posterior rotacion.
+- Significado de las propiedades clave (`proxyMethod`, `proxyPath`, `secretName`, etc.).
+- Como consumir el recurso a partir de la EndpointDataReference (EDR).
 
 ---
 
-## 1. Crear el asset con token incrustado (`authCode`)
+## 1. Asset con token incrustado (`authCode`)
 
-Úsalo únicamente para pruebas rápidas con tokens de corta duración.
+Solo recomendado para pruebas rapidas con tokens de corta duracion.
 
-1. Preparar el JSON del asset (guárdalo como `asset-secure-endpoint.json`):
+1. Crea un fichero `asset-secure-endpoint.json`:
 
    ```json
    {
@@ -31,12 +32,12 @@ Este documento describe cómo publicar un asset `HttpData` en el entorno **Minim
        "proxyQueryParams": "true",
        "proxyBody": "true",
        "authKey": "Authorization",
-       "authCode": "Bearer eyJhbGciOi..."       // token temporal pegado a mano
+       "authCode": "Bearer eyJhbGciOi..."
      }
    }
    ```
 
-2. Registrar el asset en el controlplane del proveedor:
+2. Registra el asset en el controlplane del proveedor:
 
    ```bash
    curl -X POST \
@@ -46,7 +47,7 @@ Este documento describe cómo publicar un asset `HttpData` en el entorno **Minim
      https://provider-controlplane.mvd/management/v3/assets
    ```
 
-3. Cada vez que el token caduque, actualiza solo la sección del `dataAddress`:
+3. Para renovar el token repite el `PUT` solo con el `dataAddress`:
 
    ```bash
    curl -X PUT \
@@ -67,11 +68,11 @@ Este documento describe cómo publicar un asset `HttpData` en el entorno **Minim
 
 ---
 
-## 2. Gestionar el token con HashiCorp Vault (`secretName`)
+## 2. Token en HashiCorp Vault (`secretName`)
 
-Recomendado para entornos persistentes o tokens de rotación frecuente.
+Uso recomendado para entornos reales o rotaciones frecuentes.
 
-1. Reutiliza el asset anterior cambiando `authCode` por `secretName`:
+1. Ajusta el `dataAddress` para usar `secretName` (sin prefijos):
 
    ```json
    "dataAddress": {
@@ -82,96 +83,147 @@ Recomendado para entornos persistentes o tokens de rotación frecuente.
      "proxyQueryParams": "true",
      "proxyBody": "true",
      "authKey": "Authorization",
-     "secretName": "secret/secure-api"
+     "secretName": "secure-api"
    }
    ```
 
-2. Publica el asset con `POST /management/v3/assets` igual que antes.
+2. Publica el asset como antes (`POST /management/v3/assets`).
 
-3. Carga el token en el Vault del proveedor:
+3. Guarda el token en el Vault del proveedor:
 
    ```bash
-   # abre un túnel local contra el vault del proveedor
+   # tunel hacia el Vault del proveedor
    kubectl port-forward svc/provider-vault -n mvd 8200:8200
 
-   # exporta el token raíz que Terraform mostró tras el despliegue
    export VAULT_ADDR=http://127.0.0.1:8200
-   export VAULT_TOKEN=$(terraform -chdir=deployment output -raw provider_vault_root_token)
+   export VAULT_TOKEN=root   # valor por defecto en el despliegue MVD
 
-   # guarda o actualiza el bearer token
-   vault kv put secret/secure-api token="Bearer eyJhbGciOi..."
+   # guardar o actualizar el token en la clave "content"
+   vault kv put secret/secure-api content="Bearer eyJhbGciOi..."
    ```
 
-   El dataplane resolverá automáticamente `secret/secure-api`, buscará la clave `token` y añadirá el header `Authorization: Bearer …` en cada transferencia.
+   Alternativa via API HTTP:
 
-4. Para renovar el token solo repite `vault kv put`; el asset no necesita cambios.
+   ```bash
+   curl -X POST http://127.0.0.1:8200/v1/secret/data/secure-api \
+        -H "X-Vault-Token: ${VAULT_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d '{"data":{"content":"Bearer eyJhbGciOi..."}}'
+   ```
+
+4. Para revisar o rotar:
+
+   ```bash
+   vault kv get secret/secure-api          # ver valor actual
+   vault kv put secret/secure-api content="Bearer <nuevo-token>"   # rotar
+   ```
+
+   El dataplane siempre usara la version mas reciente sin necesidad de modificar el asset ni reiniciar servicios.
 
 ---
 
-## 3. Soporte de métodos HTTP y cuerpo de la petición
+## 3. Propiedades del `dataAddress` (referencia rapida)
 
-El dataplane ejecuta la petición al backend según la configuración del `dataAddress`.
+| Propiedad        | Significado                                                                                 |
+|------------------|----------------------------------------------------------------------------------------------|
+| `baseUrl`        | URL base del backend. No debe incluir `/data/{transferId}`.                                  |
+| `method`         | Metodo HTTP fijo cuando no se proxyfica el metodo (por defecto `GET`).                       |
+| `proxyMethod`    | Si es `"true"` y la transferencia es `PULL`, usa el metodo recibido del consumidor.          |
+| `path`           | Ruta fija añadida al `baseUrl` cuando `proxyPath` es `"false"`.                              |
+| `proxyPath`      | Replica el path recibido del consumidor. En `PULL` añade `/data/{transferId}` al `baseUrl`.  |
+| `queryParams`    | Parametros fijos que se añaden a la llamada.                                                 |
+| `proxyQueryParams` | Añade los parametros de query enviados por el consumidor.                                 |
+| `contentType`    | Cabecera `Content-Type` fija (solo si no se proxyfica el cuerpo).                            |
+| `proxyBody`      | Replica el cuerpo y `Content-Type` enviados por el consumidor.                               |
+| `authKey`        | Nombre de la cabecera de autenticacion (por ejemplo `Authorization`).                        |
+| `authCode`       | Token incrustado directamente en el asset (solo pruebas).                                    |
+| `secretName`     | Nombre del secreto en Vault (sin prefijo). El valor debe estar bajo la clave `content`.      |
+| `header:<Nombre>`| Cabeceras adicionales que siempre se incluiran en la llamada al backend.                     |
 
-- `method`: define el método fijo (por defecto `GET`).  
-  ```json
-  "method": "POST"
-  ```
-
-- `proxyMethod`: cuando es `"true"` el dataplane reutiliza el método que recibe del consumidor (aplica a `GET`, `POST`, etc.).
-
-- `proxyBody`: con valor `"true"` el dataplane reenvía el cuerpo que envíe el consumidor. Si es `"false"` no se enviará `body`.
-
-- `proxyQueryParams`: propaga los parámetros de query que el consumidor añada al invocar la EDR.
-
-### Ejemplo para POST con payload
+### Ejemplo para POST con payload y secreto en Vault
 
 ```json
 "dataAddress": {
   "type": "HttpData",
   "baseUrl": "https://api.tu-dominio.com/consulta",
   "authKey": "Authorization",
-  "secretName": "secret/secure-api",
+  "secretName": "secure-api",
   "method": "POST",
   "proxyBody": "true",
   "proxyQueryParams": "true"
 }
 ```
 
-La aplicación consumidora puede entonces llamar al dataplane:
+El consumidor invoca el dataplane:
 
 ```bash
-curl -X POST https://<provider-dataplane>/data/<transferId> \
+curl -X POST https://<host-ingress>/<alias>/dataplane/api/public/data/<transferId> \
      -H "Authorization: <token-EDR>" \
      -H "Content-Type: application/json" \
-     -d '{"pedidoId":123,"items":[...] }'
+     -d '{"pedidoId":123,"items":[...]}'
 ```
 
-El dataplane enviará ese mismo JSON al backend, inyectando internamente el bearer almacenado en Vault o en `authCode`.
+El dataplane validara el token de la EDR, resolvera `secure-api` en Vault y enviara el bearer real al backend.
+
+> Consejo: si tu API no acepta el sufijo `/data/<transferId>`, desactiva `proxyPath` o define `path` con la ruta exacta.
 
 ---
 
-## 4. Flujo completo resumido
+## 4. Consumir el asset tras la transferencia
 
-1. **Asset disponible**: datos del endpoint protegidos mediante `HttpData`.
-2. **Contrato aprobado**: se emite una EndpointDataReference (EDR) con URL y credenciales temporales para el dataplane.
-3. **Cliente consumidor**: invoca la URL de la EDR (GET o POST) proporcionando los headers/cuerpo necesarios.
-4. **Dataplane proveedor**: construye la petición hacia el backend usando `baseUrl`, añade `Authorization` con el token recuperado y devuelve la respuesta (`JSON`, `CSV`, etc.) al consumidor.
+1. El consumidor lanza la transferencia (`POST /management/v3/transferprocesses`).
+2. Una vez en estado `COMPLETED`, recupera la EDR:
+
+   ```bash
+   curl -H "X-Api-Key: consumer-api-key" \
+        http://localhost/consumer/cp/api/management/v3/edrs/<transferProcessId>/dataaddress
+   ```
+
+   Campos clave:
+   - `endpoint`: URL base del dataplane del proveedor (ej. `http://provider-qna-dataplane:11002/api/public`).
+   - `authorization`: token temporal que el consumidor debe usar.
+
+3. Para peticiones `PULL`, la URL real es `GET {endpoint}/data/{transferProcessId}`. A traves del ingress local del MVD:
+
+   ```bash
+   curl -X GET \
+        http://localhost/provider-qna/public/api/public/data/<transferProcessId> \
+        -H "Authorization: <token-EDR>"
+   ```
+
+4. Para listar transferencias recientes ordenadas:
+
+   ```bash
+   curl -H "X-Api-Key: consumer-api-key" \
+        "http://localhost/consumer/cp/api/management/v3/transferprocesses?sort=createdAt&sortOrder=DESC&limit=5"
+   ```
+
+   Tambien puedes usar `POST /management/v3/transferprocesses/request` con un `QuerySpec` que incluya `sortField` y `sortOrder`.
 
 ---
 
-## 5. Consejos y buenas prácticas
+## 5. Flujo resumido
 
-- Usa `authCode` solo en pruebas; para producción delega en Vault (`secretName`).
-- Rotación de tokens: automatiza `vault kv put` o integra OAuth2 (consulta la extensión `oauth2-provision` del EDC).
-- Ajusta `contentType` si el backend requiere algo distinto a `application/json`.
-- Monitoriza los logs del dataplane (`kubectl logs deployment/provider-dataplane -n mvd`) para depurar errores de autenticación o llamadas fallidas.
-- Tras crear el asset, recuerda definir la `Policy` y `ContractDefinition` que lo harán visible en el catálogo del proveedor.
+1. Publicas el asset `HttpData`.
+2. Creas la `Policy` y la `ContractDefinition` para exponerlo en el catalogo.
+3. El consumidor negocia y recibe la EDR.
+4. El consumidor llama al dataplane con el token de la EDR.
+5. El dataplane injerta el bearer del Vault en la llamada al backend y retorna la respuesta.
 
 ---
 
-## 6. Referencias útiles
+## 6. Buenas practicas
 
-- `extensions/data-plane/data-plane-http/.../BaseCommonHttpParamsDecorator.java`: inyección de headers y resolución de secretos.
-- `extensions/data-plane/data-plane-http/.../BaseSourceHttpParamsDecorator.java`: soporte de métodos, cuerpo y query parameters.
-- `docs/technical-overview.md`: arquitectura general del MVD.
+- Limita `authCode` a pruebas. En produccion usa `secretName` y Vault.
+- Automatiza la rotacion: scripts o jobs que actualicen `vault kv put secret/secure-api content="<nuevo>"`.
+- Ajusta `proxyPath` y `proxyMethod` segun lo que acepte tu backend.
+- Observa los logs del dataplane (`kubectl logs deployment/<alias>-dataplane -n mvd`) para depurar.
+- Tras modificar el asset, inicia una nueva transferencia para validar los cambios.
 
+---
+
+## 7. Referencias
+
+- `extensions/data-plane/data-plane-http/.../BaseCommonHttpParamsDecorator.java`
+- `extensions/data-plane/data-plane-http/.../BaseSourceHttpParamsDecorator.java`
+- `docs/technical-overview.md`

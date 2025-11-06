@@ -191,15 +191,15 @@ El dataplane validara el token de la EDR, resolvera `secure-api` en Vault y envi
    - `endpoint`: URL base del dataplane del proveedor (ej. `http://provider-qna-dataplane:11002/api/public`).
    - `authorization`: token temporal que el consumidor debe usar.
 
-3. Para peticiones `PULL`, el patron recomendado es `GET {endpoint}/data/{transferProcessId}` porque es el que contemplan las validaciones de acceso. A traves del ingress local del MVD:
+3. Para peticiones `PULL`, basta con invocar el endpoint publico. Un formato habitual es `GET {endpoint}/data/{transferProcessId}`, pero en el despliegue MVD puede omitirse el sufijo y llamar directamente a `{endpoint}`.
 
    ```bash
    curl -X GET \
-        http://localhost/provider-qna/public/api/public/data/<transferProcessId> \
+        http://localhost/provider-qna/public/api/public \
         -H "Authorization: <token-EDR>"
    ```
 
-   Con la configuracion por defecto del MVD (access control permisivo) tambien puedes omitir el `transferProcessId` y llamar directamente a `http://localhost/provider-qna/public/api/public`; el dataplane seguira invocando `baseUrl` o `baseUrl + path`. Ten en cuenta que despliegues con controles mas estrictos suelen exigir el formato con `/data/<transferProcessId>`.
+   El dataplane valida el token de la EDR y realiza la llamada al backend usando `baseUrl` (y `path`/`proxyPath` segun corresponda).
 
 4. Para listar transferencias recientes ordenadas:
 

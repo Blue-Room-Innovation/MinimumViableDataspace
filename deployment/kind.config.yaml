@@ -35,3 +35,25 @@ nodes:
       - containerPort: 443
         hostPort: 443
         protocol: TCP
+      # Exposed NodePorts for dataspace-issuer-service
+      - containerPort: 32217 # web
+        hostPort: 32217
+        protocol: TCP
+      - containerPort: 30948 # sts
+        hostPort: 30948
+        protocol: TCP
+      - containerPort: 30604 # debug
+        hostPort: 30604
+        protocol: TCP
+      - containerPort: 31401 # issuance
+        hostPort: 31401
+        protocol: TCP
+      - containerPort: 32730 # issueradmin
+        hostPort: 32730
+        protocol: TCP
+      - containerPort: 32132 # identity
+        hostPort: 32132
+        protocol: TCP
+      - containerPort: 31890 # did
+        hostPort: 31890
+        protocol: TCP

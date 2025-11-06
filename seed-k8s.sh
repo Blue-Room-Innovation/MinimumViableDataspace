@@ -132,15 +132,22 @@ DATA_ISSUER=$(jq -n --arg pem "$PEM_ISSUER" '{
             "serviceEndpoints":[
               {
                  "type": "IssuerService",
-                 "serviceEndpoint": "http://dataspace-issuer-service:10012/api/issuance/v1alpha/participants/ZGlkOndlYjpkYXRhc3BhY2UtaXNzdWVyLXNlcnZpY2UlM0ExMDAxNjppc3N1ZXI=",
-                 "id": "issuer-service-1"
+                 # Endpoint externo (primero) para que los clientes fuera del cluster lo seleccionen.
+                 "serviceEndpoint": "http://localhost:31401/api/issuance/v1alpha",
+                 "id": "issuer-service-public-1"
+              },
+              {
+                 "type": "IssuerServiceInternal",
+                 # Endpoint interno para pods dentro del cluster (Service DNS + issuance port)
+                 "serviceEndpoint": "http://dataspace-issuer-service:10012/api/issuance/v1alpha",
+                 "id": "issuer-service-internal-1"
               }
             ],
             "active": true,
-            "participantId": "did:web:dataspace-issuer-service%3A10016:issuer",
-            "did": "did:web:dataspace-issuer-service%3A10016:issuer",
+            "participantId": "did:web:mvd-control-plane:issuer",
+            "did": "did:web:mvd-control-plane:issuer",
             "key":{
-                "keyId": "did:web:dataspace-issuer-service%3A10016:issuer#key-1",
+                "keyId": "did:web:mvd-control-plane:issuer#key-1",
                 "privateKeyAlias": "key-1",
                 "keyGeneratorParams":{
                   "algorithm": "EdDSA"

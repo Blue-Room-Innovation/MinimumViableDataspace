@@ -21,7 +21,7 @@ ASSET_ID="${ASSET_ID:-asset-secure-endpoint}"
 ASSET_BASE_URL="${ASSET_BASE_URL:-https://api.circularpass.io/api/secure/v1/instances}"
 SECRET_NAME="${SECRET_NAME:-secure-api}"
 POLICY_ID="${POLICY_ID:-require-membership}"
-CONTRACT_DEF_ID="${CONTRACT_DEF_ID:-secure-asset-membership-required-def-2}"
+CONTRACT_DEF_ID="${CONTRACT_DEF_ID:-secure-asset-membership-required-def}"
 
 MGMT_ROOT="${BASE_URL%/}/api/management/v3"
 CURL_COMMON=(-sS -H "Content-Type: application/json" -H "X-Api-Key: ${API_KEY}")

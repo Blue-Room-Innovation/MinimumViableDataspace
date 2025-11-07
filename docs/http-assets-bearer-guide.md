@@ -122,51 +122,75 @@ Uso recomendado para entornos reales o rotaciones frecuentes.
 
 ---
 
-## 3. Propiedades del `dataAddress` (referencia rapida)
+## 3. Propiedades del `dataAddress`
 
-| Propiedad        | Significado                                                                                 |
-|------------------|----------------------------------------------------------------------------------------------|
-| `baseUrl`        | URL base del backend. No debe incluir `/data/{transferId}`.                                  |
-| `method`         | Metodo HTTP fijo cuando no se proxyfica el metodo (por defecto `GET`).                       |
-| `proxyMethod`    | Si es `"true"` y la transferencia es `PULL`, usa el metodo recibido del consumidor.          |
-| `path`           | Ruta fija añadida al `baseUrl` cuando `proxyPath` es `"false"`.                              |
-| `proxyPath`      | Replica el path recibido del consumidor. Copia todo lo que vaya tras `/api/public/` en la solicitud al dataplane y lo concatena al `baseUrl`.  |
-| `queryParams`    | Parametros fijos que se añaden a la llamada.                                                 |
-| `proxyQueryParams` | Añade los parametros de query enviados por el consumidor.                                 |
-| `contentType`    | Cabecera `Content-Type` fija (solo si no se proxyfica el cuerpo).                            |
-| `proxyBody`      | Replica el cuerpo y `Content-Type` enviados por el consumidor.                               |
-| `authKey`        | Nombre de la cabecera de autenticacion (por ejemplo `Authorization`).                        |
-| `authCode`       | Token incrustado directamente en el asset (solo pruebas).                                    |
-| `secretName`     | Nombre del secreto en Vault (sin prefijo). El valor debe estar bajo la clave `content`.      |
-| `header:<Nombre>`| Cabeceras adicionales que siempre se incluiran en la llamada al backend.                     |
+Todas las propiedades viven dentro del objeto `dataAddress`. La tabla siguiente resume las mas usadas y ejemplos de valores.
 
-### Ejemplo para POST con payload y secreto en Vault
+| Propiedad | Descripcion | Ejemplo util |
+|-----------|-------------|--------------|
+| `type` | Siempre `HttpData` para transferencias HTTP. | "type": "HttpData" |
+| `baseUrl` | URL base del backend (sin `/data/<transferId>`). | "baseUrl": "https://api.circularpass.io/api/secure/v1" |
+| `path` | Ruta fija concatenada cuando `proxyPath = "false"`. | "path": "/instances/did%3Aweb%3A..." |
+| `method` | Metodo HTTP fijo (por defecto `GET`). | "method": "POST" |
+| `proxyMethod` | "true" reutiliza el metodo usado por el consumidor. | "proxyMethod": "true" |
+| `proxyPath` | "true" concatena al `baseUrl` todo lo que vaya tras `/api/public/`. | "proxyPath": "true" |
+| `queryParams` | Parametros estaticos añadidos al backend. | "queryParams": "page=1&pageSize=10" |
+| `proxyQueryParams` | Replica los parametros enviados por el consumidor. | "proxyQueryParams": "true" |
+| `proxyBody` | "true" reenvia el body y `Content-Type` del consumidor. | "proxyBody": "true" |
+| `contentType` | Cabecera fija cuando no proxificas el body. | "contentType": "application/json" |
+| `authKey` | Cabecera donde se inyectara el secreto (Bearer, API key...). | "authKey": "Authorization" |
+| `authCode` | Valor literal del header (solo pruebas). | "authCode": "Bearer eyJ..." |
+| `secretName` | Nombre del secreto en Vault (sin `secret/`). | "secretName": "secure-api" |
+| `header:<Nombre>` | Cabeceras adicionales fijas. | "header:Accept": "application/json" |
+| `nonChunkedTransfer` | "true" desactiva chunking. | "nonChunkedTransfer": "true" |
 
-```json
-"dataAddress": {
-  "type": "HttpData",
-  "baseUrl": "https://api.tu-dominio.com/consulta",
-  "authKey": "Authorization",
-  "secretName": "secure-api",
-  "method": "POST",
-  "proxyBody": "true",
-  "proxyQueryParams": "true"
-}
-```
+### Notas clave
 
-El consumidor invoca el dataplane:
+- Para rutas fijas deja `proxyPath = "false"` y define `baseUrl`/`path`.
+- Para rutas dinamicas usa `proxyPath = "true"` y deja que el consumidor añada segmentos tras `/api/public/`.
+- `authKey` sirve tanto para Bearer como para API keys; `secretName` funciona igual en ambos casos.
+- `proxyBody = "true"` implica que el consumidor envia el cuerpo exacto al dataplane (ideal para `POST`).
 
-```bash
-curl -X POST https://<host-ingress>/<alias>/dataplane/api/public/data/<transferId> \
-     -H "Authorization: <token-EDR>" \
-     -H "Content-Type: application/json" \
-     -d '{"pedidoId":123,"items":[...]}'
-```
+### Combinaciones frecuentes
 
-El dataplane validara el token de la EDR, resolvera `secure-api` en Vault y enviara el bearer real al backend.
+1. **GET fijo**
+   ```json
+   "dataAddress": {
+     "type": "HttpData",
+     "baseUrl": "https://api.circularpass.io/api/secure/v1/instances",
+     "proxyPath": "false",
+     "proxyMethod": "false",
+     "proxyQueryParams": "false"
+   }
+   ```
 
-> Consejo: si tu API no acepta el sufijo `/data/<transferId>`, desactiva `proxyPath` o define `path` con la ruta exacta.
+2. **GET dinamico reutilizable**
+   ```json
+   "dataAddress": {
+     "type": "HttpData",
+     "baseUrl": "https://api.circularpass.io/api/secure/v1",
+     "proxyPath": "true",
+     "proxyMethod": "true",
+     "proxyQueryParams": "true"
+   }
+   ```
 
+3. **POST con secreto en Vault**
+   ```json
+   "dataAddress": {
+     "type": "HttpData",
+     "baseUrl": "https://api.tu-dominio.com/api/v2/oauth/login",
+     "method": "POST",
+     "proxyBody": "true",
+     "contentType": "application/json",
+     "authKey": "Authorization",
+     "secretName": "secure-api"
+   }
+   ```
+
+El consumidor invoca el dataplane con el token de la EDR y el body requerido por la API origen. El dataplane añade el header usando el secreto de Vault.
+
+> Consejo: si tu API no acepta sufijos dinamicos, desactiva `proxyPath` o fija `path` con la ruta exacta.
 ### Como funciona realmente `proxyPath`
 
 - El dataplane publica todo bajo `.../api/public/**`. Con `proxyPath = "true"` copia literalmente el tramo que vaya **despues de `/api/public/`** y lo concatena al `baseUrl`.
@@ -268,3 +292,4 @@ API_KEY=provider-api-key \
 ```
 
 El script elimina versiones anteriores (si existen) y crea de nuevo el asset, la policy y la contract definition, dejando el dataspace listo para pruebas con CircularPass.
+

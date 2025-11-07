@@ -19,24 +19,25 @@ plugins {
     `java-library`
     id("com.bmuschko.docker-remote-api") version "9.4.0"
     id("com.github.johnrengelman.shadow") version "8.1.1"
+    alias(libs.plugins.edc.build)
 }
 
 buildscript {
     dependencies {
-        val edcGradlePluginsVersion: String by project
-        classpath("org.eclipse.edc.edc-build:org.eclipse.edc.edc-build.gradle.plugin:${edcGradlePluginsVersion}")
+        val version: String by project
+        classpath("org.eclipse.edc.autodoc:org.eclipse.edc.autodoc.gradle.plugin:$version")
     }
 }
 
-val annotationProcessorVersion: String by project
+val edcBuildId = libs.plugins.edc.build.get().pluginId
 
 allprojects {
-    apply(plugin = "${group}.edc-build")
+    apply(plugin = edcBuildId)
+    apply(plugin = "org.eclipse.edc.autodoc")
 
     // configure which version of the annotation processor to use. defaults to the same version as the plugin
     configure<org.eclipse.edc.plugins.autodoc.AutodocExtension> {
         outputDirectory.set(project.layout.buildDirectory.asFile)
-        processorVersion.set(annotationProcessorVersion)
     }
 
     configure<org.eclipse.edc.plugins.edcbuild.extensions.BuildExtension> {
@@ -51,7 +52,7 @@ allprojects {
 subprojects {
     afterEvaluate {
         if (project.plugins.hasPlugin("com.github.johnrengelman.shadow") &&
-                file("${project.projectDir}/src/main/docker/Dockerfile").exists()
+            file("${project.projectDir}/src/main/docker/Dockerfile").exists()
         ) {
 
             //actually apply the plugin to the (sub-)project

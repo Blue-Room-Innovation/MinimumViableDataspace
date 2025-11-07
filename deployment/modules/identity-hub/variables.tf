@@ -37,22 +37,22 @@ variable "namespace" {
 
 variable "ports" {
   type = object({
-    web              = number
-    debug            = number
-    ih-debug         = number
-    ih-did           = number
-    ih-identity-api  = number
-    presentation-api = number
-    sts-api          = number
+    web             = number
+    debug           = number
+    ih-debug        = number
+    ih-did          = number
+    ih-identity-api = number
+    credentials-api = number
+    sts-api         = number
   })
   default = {
-    web              = 7080
-    debug            = 1044
-    ih-debug         = 1044
-    ih-did           = 7083
-    ih-identity-api  = 7081
-    presentation-api = 7082
-    sts-api          = 7084
+    web             = 7080
+    debug           = 1044
+    ih-debug        = 1044
+    ih-did          = 7083
+    ih-identity-api = 7081
+    credentials-api = 7082
+    sts-api         = 7084
   }
 }
 
@@ -102,7 +102,14 @@ variable "database" {
   })
 }
 
-variable "sts-accounts-api-url" {
-  description = "Base URL for the STS Accounts API"
+variable "useSVE" {
+  type        = bool
+  description = "If true, the -XX:UseSVE=0 switch (Scalable Vector Extensions) will be appended to the JAVA_TOOL_OPTIONS. Can help on macOs on Apple Silicon processors"
+  default     = false
+}
+
+variable "sts-token-path" {
+  description = "path suffix of the STS token API"
   type        = string
+  default     = "/api/sts"
 }

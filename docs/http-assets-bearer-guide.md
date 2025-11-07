@@ -237,3 +237,34 @@ El dataplane validara el token de la EDR, resolvera `secure-api` en Vault y envi
 - `extensions/data-plane/data-plane-http/.../BaseCommonHttpParamsDecorator.java`
 - `extensions/data-plane/data-plane-http/.../BaseSourceHttpParamsDecorator.java`
 - `docs/technical-overview.md`
+
+---
+
+## 8. Script de seed rapido
+
+El script `./seed-secure-asset.sh` registra automaticamente:
+
+- el asset `HttpData` apuntando a `https://api.circularpass.io/api/secure/v1/instances`,
+- la policy `require-membership`,
+- y la `ContractDefinition` que vincula ambos.
+
+Variables utiles (opcional cambiar antes de ejecutar):
+
+| Variable           | Valor por defecto                                      |
+|--------------------|--------------------------------------------------------|
+| `BASE_URL`         | `http://127.0.0.1/provider-qna/cp`                     |
+| `API_KEY`          | `provider-api-key`                                     |
+| `ASSET_BASE_URL`   | `https://api.circularpass.io/api/secure/v1/instances`  |
+| `SECRET_NAME`      | `secure-api`                                           |
+| `ASSET_ID`         | `asset-secure-endpoint`                                |
+| `POLICY_ID`        | `require-membership`                                   |
+
+Uso basico:
+
+```bash
+BASE_URL=http://127.0.0.1/provider-qna/cp \
+API_KEY=provider-api-key \
+./seed-secure-asset.sh
+```
+
+El script elimina versiones anteriores (si existen) y crea de nuevo el asset, la policy y la contract definition, dejando el dataspace listo para pruebas con CircularPass.

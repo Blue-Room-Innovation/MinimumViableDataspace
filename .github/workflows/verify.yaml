@@ -18,18 +18,13 @@
 #
 
 ---
-name: "Verify"
+name: "CI Verify"
 
 on:
   push:
     branches:
       - main
   pull_request:
-
-  workflow_run:
-    workflows: [ "Draft Release" ]
-    types:
-      - completed
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -54,21 +49,26 @@ jobs:
             exit 1;
           fi
 
-  checkstyle:
+  build-and-checkstyle:
     runs-on: ubuntu-latest
     steps:
-      - uses: hashicorp/setup-terraform@v3
       - uses: actions/checkout@v5
-      - uses: eclipse-edc/.github/.github/actions/setup-build@main
-      - name: Run Checkstyle
-        run: ./gradlew checkstyleMain checkstyleTest
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - name: Gradle build (tests + checkstyle)
+        run: ./gradlew -Ppersistence=true build checkstyleMain checkstyleTest --scan
 
-  validate-terraform:
+  terraform-fmt:
     runs-on: ubuntu-latest
     steps:
       - uses: hashicorp/setup-terraform@v3
       - uses: actions/checkout@v5
-      - name: Check Terraform files are properly formatted (run "terraform fmt -recursive" to fix)
+      - name: Check Terraform formatting
         run: |
           terraform fmt -recursive
-          git diff --exit-code
+          git diff --exit-code || {
+            echo "Terraform formatting issues detected. Run: terraform fmt -recursive"; exit 1; }

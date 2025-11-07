@@ -8,4 +8,12 @@
 # Each line is a file pattern followed by one or more contact persons. The last matching pattern has the most precedence.
 # For more details, read the following article on GitHub: https://help.github.com/articles/about-codeowners/.
 
-* @eclipse-edc/technology-edc-committers
+# CODEOWNERS
+# Ajustado tras desvincular el fork del proyecto original Eclipse EDC.
+# Añade aquí tus equipos o usuarios responsables de revisar PRs automáticamente.
+# Ejemplos:
+# * @Blue-Room-Innovation/maintainers
+# extensions/ @tu-usuario
+# Si no deseas auto-asignaciones, puedes dejar el archivo vacío o borrarlo.
+
+* @Blue-Room-Innovation/maintainers

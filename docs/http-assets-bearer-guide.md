@@ -102,13 +102,26 @@ Uso recomendado para entornos reales o rotaciones frecuentes.
    vault kv put secret/secure-api content="Bearer eyJhbGciOi..."
    ```
 
-   Alternativa via API HTTP:
+   Alternativas:
+
+   - **API HTTP directa**
 
    ```bash
    curl -X POST http://127.0.0.1:8200/v1/secret/data/secure-api \
         -H "X-Vault-Token: ${VAULT_TOKEN}" \
         -H "Content-Type: application/json" \
         -d '{"data":{"content":"Bearer eyJhbGciOi..."}}'
+   ```
+
+   - **Script helper (`store-vault-secret.sh`)**
+
+   ```bash
+   # requiere jq y curl instalados
+   VAULT_ADDR=http://127.0.0.1:8200 \
+   VAULT_TOKEN=root \
+   SECRET_NAME=secure-api \
+   SECRET_VALUE="Bearer eyJhbGciOi..." \
+   ./store-vault-secret.sh
    ```
 
 4. Para revisar o rotar:

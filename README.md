@@ -86,13 +86,6 @@ sudo apt update && sudo apt install -y terraform
 sudo npm install -g newman
 ```
 
-macOS (Homebrew):
-```bash
-brew install git docker jq kind terraform node
-npm install -g newman
-# Instala Temurin JDK (opcional si ya tienes >=17)
-brew install --cask temurin
-```
 
 Windows (WSL recomendado):
 1. Instala WSL2 y una distro Ubuntu.

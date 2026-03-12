@@ -30,3 +30,33 @@ variable "useSVE" {
   description = "If true, the -XX:UseSVE=0 switch (Scalable Vector Extensions) will be added to the JAVA_TOOL_OPTIONS. Can help on macOs on Apple Silicon processors"
   default     = false
 }
+
+variable "anonymization-enabled" {
+  type        = bool
+  description = "Enable k-anonimization extension in provider dataplanes"
+  default     = true
+}
+
+variable "anonymization-service-url" {
+  type        = string
+  description = "Base URL of anonymization service consumed by provider dataplanes"
+  default     = "http://host.docker.internal:8880/api/secure/"
+}
+
+variable "anonymization-service-api-key-id" {
+  type        = string
+  description = "API key id for anonymization service"
+  default     = "f56bf3015dedc9c7a25921260b98e389"
+}
+
+variable "anonymization-service-api-key-secret" {
+  type        = string
+  description = "API key secret for anonymization service"
+  default     = "5e321465d4029814ee004faefa3ab4f3f8aee41f50ad2dfe05b5ac4363286ea8"
+}
+
+variable "anonymization-timeout-seconds" {
+  type        = number
+  description = "Timeout in seconds for anonymization HTTP interactions"
+  default     = 300
+}

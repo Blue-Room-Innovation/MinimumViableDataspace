@@ -129,6 +129,13 @@ resource "kubernetes_config_map" "dataplane-config" {
     EDC_DATASOURCE_DEFAULT_PASSWORD                   = var.database.password
     EDC_SQL_SCHEMA_AUTOCREATE                         = true
 
+    # k-anonimization dataplane configuration
+    EDC_ANONYMIZATION_ENABLED                         = var.anonymization.enabled
+    EDC_ANONYMIZATION_SERVICE_URL                     = var.anonymization.service_url
+    EDC_ANONYMIZATION_SERVICE_APIKEYID                = var.anonymization.api_key_id
+    EDC_ANONYMIZATION_SERVICE_APIKEYSECRET            = var.anonymization.api_key_secret
+    EDC_ANONYMIZATION_TIMEOUT_SECONDS                 = var.anonymization.timeout_seconds
+
     # remote STS configuration
     EDC_IAM_STS_OAUTH_TOKEN_URL           = var.sts-token-url
     EDC_IAM_STS_OAUTH_CLIENT_ID           = var.participantId

@@ -9,3 +9,9 @@ out/
 
 .terraform*
 *terraform.tfstate*
+
+deployment/assets/credentials/k8s/consumer/*-credential.json
+deployment/assets/credentials/k8s/provider/*-credential.json
+
+deployment/assets/credentials/local/consumer/*-credential.json
+deployment/assets/credentials/local/provider/*-credential.json

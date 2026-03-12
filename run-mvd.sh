@@ -131,6 +131,31 @@ popd >/dev/null
 echo "✅ Terraform aplicado."
 echo
 
+# ---------- 5.1) Espera de deployments CP/DP ----------
+echo "⏳ Esperando deployments de conectores (CP/DP) en namespace '${NAMESPACE}'..."
+DEPLOYMENTS=(
+  provider-qna-controlplane
+  provider-qna-dataplane
+  provider-manufacturing-controlplane
+  provider-manufacturing-dataplane
+  consumer-controlplane
+  consumer-dataplane
+  provider-catalog-server-controlplane
+)
+
+for dep in "${DEPLOYMENTS[@]}"; do
+  echo "   ▶ rollout status deployment/${dep}"
+  if ! kubectl rollout status -n "${NAMESPACE}" "deployment/${dep}" --timeout=180s; then
+    echo "⚠️  deployment/${dep} no quedó disponible a tiempo."
+  fi
+done
+
+# Evita condición de carrera: el dataplane puede tardar unos segundos extra en auto-registrarse en el control-plane.
+echo "⏱️  Espera de estabilización para registro de dataplanes..."
+sleep 12
+echo "✅ Fase de estabilización completada."
+echo
+
 # ---------- 6) Verificar pods (README ejemplo) ----------
 echo "🔎 Comprobando pods en namespace '${NAMESPACE}'..."
 kubectl get pods -n "${NAMESPACE}" || true

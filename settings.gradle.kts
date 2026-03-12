@@ -29,6 +29,8 @@ include(":extensions:did-example-resolver")
 include(":extensions:catalog-node-resolver")
 include(":extensions:dcp-impl")
 include(":extensions:superuser-seed")
+include(":extensions:k-anonimization-control-plane")
+include(":extensions:k-anonimization-data-plane")
 //include(":tests:performance")
 include(":tests:end2end")
 

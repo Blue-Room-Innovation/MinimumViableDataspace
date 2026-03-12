@@ -19,6 +19,7 @@ plugins {
 }
 
 dependencies {
+    runtimeOnly(project(":extensions:k-anonimization-data-plane"))
     runtimeOnly(libs.edc.bom.dataplane)
     runtimeOnly(libs.edc.dataplane.v2)
 

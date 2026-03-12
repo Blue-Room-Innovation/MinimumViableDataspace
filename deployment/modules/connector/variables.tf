@@ -108,6 +108,24 @@ variable "useSVE" {
   default     = false
 }
 
+variable "anonymization" {
+  description = "K-anonimization dataplane runtime settings"
+  type = object({
+    enabled         = bool
+    service_url     = string
+    api_key_id      = string
+    api_key_secret  = string
+    timeout_seconds = number
+  })
+  default = {
+    enabled         = false
+    service_url     = ""
+    api_key_id      = ""
+    api_key_secret  = ""
+    timeout_seconds = 300
+  }
+}
+
 locals {
   name                      = lower(var.humanReadableName)
   controlplane-service-name = "${var.humanReadableName}-controlplane"

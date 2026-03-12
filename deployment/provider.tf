@@ -29,6 +29,13 @@ module "provider-qna-connector" {
   vault-url     = "http://provider-vault:8200"
   sts-token-url = "${module.provider-identityhub.sts-token-url}/token"
   useSVE        = var.useSVE
+  anonymization = {
+    enabled         = var.anonymization-enabled
+    service_url     = var.anonymization-service-url
+    api_key_id      = var.anonymization-service-api-key-id
+    api_key_secret  = var.anonymization-service-api-key-secret
+    timeout_seconds = var.anonymization-timeout-seconds
+  }
 }
 
 # Second provider connector "provider-manufacturing"
@@ -45,6 +52,13 @@ module "provider-manufacturing-connector" {
   vault-url     = "http://provider-vault:8200"
   sts-token-url = "${module.provider-identityhub.sts-token-url}/token"
   useSVE        = var.useSVE
+  anonymization = {
+    enabled         = var.anonymization-enabled
+    service_url     = var.anonymization-service-url
+    api_key_id      = var.anonymization-service-api-key-id
+    api_key_secret  = var.anonymization-service-api-key-secret
+    timeout_seconds = var.anonymization-timeout-seconds
+  }
 }
 
 module "provider-identityhub" {

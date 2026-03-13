@@ -13,5 +13,6 @@ plugins {
 }
 
 dependencies {
+    implementation(libs.edc.core.runtime)
     implementation(libs.edc.controlplane.core)
 }

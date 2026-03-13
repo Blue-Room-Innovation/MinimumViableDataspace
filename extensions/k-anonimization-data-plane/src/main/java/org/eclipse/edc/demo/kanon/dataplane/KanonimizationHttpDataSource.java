@@ -20,7 +20,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Locale;
-import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
@@ -42,7 +41,6 @@ public class KanonimizationHttpDataSource implements DataSource {
     private final String processId;
     private final String agreementId;
     private final String flowAssetId;
-    private final Map<String, String> flowProperties;
     private final Monitor monitor;
 
     public KanonimizationHttpDataSource(KanonimizationServiceClient client,
@@ -51,7 +49,6 @@ public class KanonimizationHttpDataSource implements DataSource {
                                         String processId,
                                         String agreementId,
                                         String flowAssetId,
-                                        Map<String, String> flowProperties,
                                         Monitor monitor) {
         this.client = client;
         this.sourceDataAddress = sourceDataAddress;
@@ -59,7 +56,6 @@ public class KanonimizationHttpDataSource implements DataSource {
         this.processId = processId;
         this.agreementId = agreementId;
         this.flowAssetId = flowAssetId;
-        this.flowProperties = flowProperties;
         this.monitor = monitor;
     }
 
@@ -72,37 +68,22 @@ public class KanonimizationHttpDataSource implements DataSource {
                 return error("[K-ANON][DP] Missing baseUrl for request " + requestId);
             }
 
-            var propagatedPolicyUrl = firstNonBlank(
-                    flowProperties.get("kanon.policyConfigUrl"),
-                    asString(sourceDataAddress.getProperty("kanon.policyConfigUrl"))
-            );
-            var propagatedAssetId = firstNonBlank(flowProperties.get("kanon.assetId"), flowAssetId);
-            var enabledFlag = firstNonBlank(
-                    flowProperties.get("kanon.enabled"),
-                    asString(sourceDataAddress.getProperty("kanon.enabled")),
-                    asString(sourceDataAddress.getProperty("kAnonimizacion"))
-            );
-
-            var anonymizationRequested = isTruthy(enabledFlag) || (propagatedPolicyUrl != null && !propagatedPolicyUrl.isBlank());
+            var policyConfigUrl = asString(sourceDataAddress.getProperty("kanon.policyConfigUrl"));
+            var anonymizationRequested = policyConfigUrl != null && !policyConfigUrl.isBlank();
             if (!anonymizationRequested) {
                 monitor.info("[K-ANON][DP] detection=false requestId=%s processId=%s agreementId=%s assetId=%s"
-                        .formatted(requestId, processId, agreementId, propagatedAssetId));
+                        .formatted(requestId, processId, agreementId, flowAssetId));
                 var original = client.downloadFile(datasetUrl);
                 var mediaType = mediaTypeFromUrl(datasetUrl);
                 var part = new InMemoryPart(fileNameFromUrl(datasetUrl), original, mediaType);
                 return success(Stream.of(part));
             }
 
-            if (propagatedPolicyUrl == null || propagatedPolicyUrl.isBlank()) {
-                return error("[K-ANON][DP] requestId=%s processId=%s agreementId=%s assetId=%s requires anonymization but kanon.policyConfigUrl is missing."
-                        .formatted(requestId, processId, agreementId, propagatedAssetId));
-            }
-
             var datasetFormat = datasetFormatFromUrl(datasetUrl);
             monitor.info("[K-ANON][DP] detection=true requestId=%s processId=%s agreementId=%s assetId=%s"
-                    .formatted(requestId, processId, agreementId, propagatedAssetId));
+                    .formatted(requestId, processId, agreementId, flowAssetId));
 
-            var zipBytes = client.anonymizeFromUrls(datasetUrl, propagatedPolicyUrl, datasetFormat);
+            var zipBytes = client.anonymizeFromUrls(datasetUrl, policyConfigUrl, datasetFormat);
             var anonymizedFile = extractAnonymizedDataset(zipBytes, datasetFormat);
             var part = new InMemoryPart(anonymizedFile.fileName(), anonymizedFile.content(), mediaTypeFromUrl(anonymizedFile.fileName()));
             return success(Stream.of(part));
@@ -260,20 +241,6 @@ public class KanonimizationHttpDataSource implements DataSource {
             return second;
         }
         return null;
-    }
-
-    /**
-     * Returns first non-blank across three candidates.
-     */
-    private String firstNonBlank(String first, String second, String third) {
-        return firstNonBlank(firstNonBlank(first, second), third);
-    }
-
-    /**
-     * Converts common true-like strings to boolean.
-     */
-    private boolean isTruthy(String value) {
-        return value != null && "true".equalsIgnoreCase(value.trim());
     }
 
     /**

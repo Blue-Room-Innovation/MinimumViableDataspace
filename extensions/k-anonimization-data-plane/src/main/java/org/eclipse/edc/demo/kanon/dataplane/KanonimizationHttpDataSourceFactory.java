@@ -17,8 +17,6 @@ import org.eclipse.edc.spi.result.Result;
 import org.eclipse.edc.spi.types.domain.transfer.DataFlowStartMessage;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.Map;
-
 public class KanonimizationHttpDataSourceFactory implements DataSourceFactory {
 
     private final KanonimizationServiceClient client;
@@ -36,7 +34,6 @@ public class KanonimizationHttpDataSourceFactory implements DataSourceFactory {
 
     @Override
     public DataSource createSource(DataFlowStartMessage request) {
-        var flowProperties = request.getProperties() == null ? Map.<String, String>of() : request.getProperties();
         return new KanonimizationHttpDataSource(
                 client,
                 request.getSourceDataAddress(),
@@ -44,7 +41,6 @@ public class KanonimizationHttpDataSourceFactory implements DataSourceFactory {
                 request.getProcessId(),
                 request.getAgreementId(),
                 request.getAssetId(),
-                flowProperties,
                 monitor
         );
     }

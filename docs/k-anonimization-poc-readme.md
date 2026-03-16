@@ -32,16 +32,17 @@ La propuesta minima implementada es:
 1. Politica de contrato
 
 - Constraint en policy: leftOperand = KAnonymization, operator = EQ, rightOperand = true.
-- Si KAnonymization != true, no se activa el comportamiento especial.
+- Si KAnonymization != true (o el constraint no existe), no se activa el comportamiento de anonimizacion.
 
 2. Metadatos del asset (validacion adicional)
 
-- kAnonimizacion = true
 - kanon.policyConfigUrl = URL accesible del archivo de politica de anonimización
 
 Regla minima efectiva:
 
-- Solo se considera "anonimizable" si la policy lo solicita (KAnonymization=true) y el asset contiene metadatos coherentes (kAnonimizacion=true + kanon.policyConfigUrl no vacio).
+- La anonimizacion se ejecuta SOLO cuando la policy exige KAnonymization=true Y el asset contiene kanon.policyConfigUrl no vacio.
+- **Si la policy requiere KAnonymization=true pero el asset no tiene kanon.policyConfigUrl**, la transferencia se rechaza en Control Plane con un error (fail-fast), evitando consumir recursos en una transferencia que no puede completarse correctamente.
+- **Nota importante**: El atributo `kAnonimizacion` del asset ya NO se utiliza. La decision se basa unicamente en el constraint de la politica.
 
 ## 3. Se ha implementado una extension basica o prueba de concepto que permita evaluar esa condicion sobre un asset
 
@@ -64,9 +65,10 @@ Si, esta implementada y operativa como PoC funcional (no solo esqueleto).
 
 - Registra la funcion de politica para KAnonymization en TransferProcessPolicyContext.TRANSFER_SCOPE.
 - Resuelve asset desde AssetIndex.
-- Lee metadatos desde properties y dataAddress del asset.
-- Valida consistencia y registra logs K-ANON.
-- Genera una señal de propagacion (agreementId -> enabled, assetId, policyConfigUrl).
+- Lee metadatos desde properties y dataAddress del asset (busca kanon.policyConfigUrl).
+- Valida que exista policyConfigUrl cuando la politica requiere KAnonymization=true.
+- Si falta policyConfigUrl cuando se requiere anonimizacion: niega la transferencia con error SEVERE.
+- Si todo es valido: almacena señal de propagacion (agreementId -> assetId, policyConfigUrl, enabled=true).
 - Publica propiedades CP -> DP via DataFlowPropertiesProvider.
 
 4. Extension de Data Plane
@@ -95,18 +97,42 @@ Si, esta implementada y operativa como PoC funcional (no solo esqueleto).
 1. Negociacion y policy evaluation en CP.
 2. Funcion KanonimizationPolicyFunction detecta KAnonymization=true.
 3. Se obtiene assetId desde ContractAgreement.
-4. Se consulta AssetIndex y se leen metadatos (kAnonimizacion, kanon.policyConfigUrl).
-5. Si todo es valido, se guarda señal en KanonimizationPropagationStore.
-6. DataFlowPropertiesProvider toma la señal y la inyecta en properties del data flow.
-7. DP recibe DataFlowStartMessage con kanon.enabled, kanon.assetId, kanon.policyConfigUrl.
-8. KanonimizationHttpDataSource ejecuta descarga + llamada API + extraccion ZIP.
-9. Se retorna dataset anonimizado al consumidor.
+4. Se consulta AssetIndex y se lee kanon.policyConfigUrl desde metadatos del asset.
+5. Si policyConfigUrl falta, se RECHAZA la transferencia con error (fail-fast).
+6. Si todo es valido, se guarda señal en KanonimizationPropagationStore.
+7. DataFlowPropertiesProvider toma la señal y la inyecta en properties del data flow.
+8. DP recibe DataFlowStartMessage con kanon.enabled, kanon.assetId, kanon.policyConfigUrl.
+9. KanonimizationHttpDataSource ejecuta descarga + llamada API + extraccion ZIP.
+10. Se retorna dataset anonimizado al consumidor.
 
-### 3.4 Ejemplos de body de peticiones (management API)
+### 3.4 Matriz de escenarios y comportamiento
+
+La siguiente tabla documenta el comportamiento del sistema ante diferentes combinaciones de configuracion de politica y asset:
+
+| #   | Policy KAnonymization            | Asset kanon.policyConfigUrl | Comportamiento CP                                 | Comportamiento DP        | Resultado Final               |
+| --- | -------------------------------- | --------------------------- | ------------------------------------------------- | ------------------------ | ----------------------------- |
+| 1   | `true`                           | ✓ presente y valida         | ✓ Almacena señal, permite transferencia           | ✓ Ejecuta anonimización  | Dataset anonimizado entregado |
+| 2   | `true`                           | ✗ ausente o vacia           | ✗ **FALLA** con error SEVERE, niega transferencia | N/A (no llega)           | Transferencia rechazada en CP |
+| 3   | `false`                          | ✓ presente                  | ✓ Permite sin señal                               | Retorna dataset original | Dataset original entregado    |
+| 4   | `false`                          | ✗ ausente                   | ✓ Permite sin señal                               | Retorna dataset original | Dataset original entregado    |
+| 5   | ausente (constraint no definido) | cualquiera                  | N/A (funcion no invocada)                         | Retorna dataset original | Dataset original entregado    |
+
+**Notas importantes:**
+
+- **Escenario #1** (caso de uso principal): Policy requiere anonimizacion Y asset tiene policyConfigUrl → se ejecuta anonimizacion.
+- **Escenario #2** (validacion fail-fast): Policy requiere anonimizacion pero falta policyConfigUrl → transferencia rechazada inmediatamente en CP con error SEVERE reportado via `context.reportProblem()`.
+- **Escenarios #3, #4, #5**: Cuando no se requiere anonimizacion (policy false o ausente), siempre se retorna el dataset original independientemente de los metadatos del asset.
+
+**Principio de diseño: Fail-fast con configuracion simplificada**
+
+La validación estricta en Control Plane (escenario #2) implementa el principio de "fail-fast": detectar configuraciones incorrectas lo antes posible.
+Se requiere definir `kanon.policyConfigUrl` en el asset cuando se vaya a usar anonimizacion.
+
+### 3.5 Ejemplos de body de peticiones (management API)
 
 Los siguientes ejemplos estan adaptados al caso real de esta PoC (mismos IDs, context y URLs propuestos).
 
-#### 3.4.1 Crear asset
+#### 3.5.1 Crear asset
 
 ```json
 {
@@ -116,8 +142,7 @@ Los siguientes ejemplos estan adaptados al caso real de esta PoC (mismos IDs, co
   "properties": {
     "edc:name": "KAnon demo asset",
     "edc:description": "PoC asset para deteccion de KAnonymization en control-plane",
-    "edc:contenttype": "application/csv",
-    "kAnonimizacion": "true"
+    "edc:contenttype": "application/csv"
   },
   "dataAddress": {
     "type": "HttpData",
@@ -131,7 +156,7 @@ Los siguientes ejemplos estan adaptados al caso real de esta PoC (mismos IDs, co
 }
 ```
 
-#### 3.4.2 Crear politica de acceso
+#### 3.5.2 Crear politica de acceso
 
 ```json
 {
@@ -154,7 +179,7 @@ Los siguientes ejemplos estan adaptados al caso real de esta PoC (mismos IDs, co
 }
 ```
 
-#### 3.4.3 Crear politica de contrato
+#### 3.5.3 Crear politica de contrato
 
 ```json
 {
@@ -177,7 +202,7 @@ Los siguientes ejemplos estan adaptados al caso real de esta PoC (mismos IDs, co
 }
 ```
 
-#### 3.4.4 Crear definicion de contrato
+#### 3.5.4 Crear definicion de contrato
 
 ```json
 {
@@ -213,7 +238,6 @@ Separacion recomendada e implementada:
 
 2. En metadatos del asset
 
-- kAnonimizacion=true como capacidad/estado tecnico del asset.
 - kanon.policyConfigUrl con el recurso tecnico de configuracion de anonimización.
 
 3. En ambos

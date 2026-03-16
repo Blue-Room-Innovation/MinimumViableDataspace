@@ -30,7 +30,13 @@ import static org.eclipse.edc.connector.dataplane.spi.pipeline.StreamResult.erro
 import static org.eclipse.edc.connector.dataplane.spi.pipeline.StreamResult.success;
 
 /**
- * DataSource that conditionally anonymizes HttpData content before delivery.
+ * DataSource que decide si anonimizar el contenido HTTP antes de entregarlo al consumidor.
+ * 
+ * Flujo:
+ * 1. Lee la URL del dataset (baseUrl) desde sourceDataAddress
+ * 2. Verifica si existe señal de anonimizacion desde Control Plane (kanon.policyConfigUrl en flowProperties)
+ * 3. Si NO hay señal de anonimizacion -> descarga y retorna dataset original
+ * 4. Si hay señal de anonimizacion -> llama servicio externo, recibe ZIP, extrae dataset anonimizado
  */
 public class KanonimizationHttpDataSource implements DataSource {
 
@@ -63,46 +69,38 @@ public class KanonimizationHttpDataSource implements DataSource {
         this.monitor = monitor;
     }
 
-    // Decides anonymization=true/false, optionally calls external API, and returns output stream part.
     @Override
     public StreamResult<Stream<Part>> openPartStream() {
         try {
+            // 1. Obtiene URL del dataset original
             var datasetUrl = asString(sourceDataAddress.getProperty("baseUrl"));
             if (datasetUrl == null || datasetUrl.isBlank()) {
                 return error("[K-ANON][DP] Missing baseUrl for request " + requestId);
             }
 
-            var propagatedPolicyUrl = firstNonBlank(
+            // 2. Busca señal de anonimizacion (policyConfigUrl propagada desde Control Plane)
+            var policyConfigUrl = firstNonBlank(
                     flowProperties.get("kanon.policyConfigUrl"),
                     asString(sourceDataAddress.getProperty("kanon.policyConfigUrl"))
             );
-            var propagatedAssetId = firstNonBlank(flowProperties.get("kanon.assetId"), flowAssetId);
-            var enabledFlag = firstNonBlank(
-                    flowProperties.get("kanon.enabled"),
-                    asString(sourceDataAddress.getProperty("kanon.enabled")),
-                    asString(sourceDataAddress.getProperty("kAnonimizacion"))
-            );
+            var assetId = firstNonBlank(flowProperties.get("kanon.assetId"), flowAssetId);
 
-            var anonymizationRequested = isTruthy(enabledFlag) || (propagatedPolicyUrl != null && !propagatedPolicyUrl.isBlank());
-            if (!anonymizationRequested) {
+            // 3. Si NO existe señal de anonimizacion -> retorna dataset original
+            if (policyConfigUrl == null || policyConfigUrl.isBlank()) {
                 monitor.info("[K-ANON][DP] detection=false requestId=%s processId=%s agreementId=%s assetId=%s"
-                        .formatted(requestId, processId, agreementId, propagatedAssetId));
+                        .formatted(requestId, processId, agreementId, assetId));
                 var original = client.downloadFile(datasetUrl);
                 var mediaType = mediaTypeFromUrl(datasetUrl);
                 var part = new InMemoryPart(fileNameFromUrl(datasetUrl), original, mediaType);
                 return success(Stream.of(part));
             }
 
-            if (propagatedPolicyUrl == null || propagatedPolicyUrl.isBlank()) {
-                return error("[K-ANON][DP] requestId=%s processId=%s agreementId=%s assetId=%s requires anonymization but kanon.policyConfigUrl is missing."
-                        .formatted(requestId, processId, agreementId, propagatedAssetId));
-            }
-
+            // 4. Existe señal de anonimizacion -> ejecuta anonimizacion via servicio externo
             var datasetFormat = datasetFormatFromUrl(datasetUrl);
             monitor.info("[K-ANON][DP] detection=true requestId=%s processId=%s agreementId=%s assetId=%s"
-                    .formatted(requestId, processId, agreementId, propagatedAssetId));
+                    .formatted(requestId, processId, agreementId, assetId));
 
-            var zipBytes = client.anonymizeFromUrls(datasetUrl, propagatedPolicyUrl, datasetFormat);
+            var zipBytes = client.anonymizeFromUrls(datasetUrl, policyConfigUrl, datasetFormat);
             var anonymizedFile = extractAnonymizedDataset(zipBytes, datasetFormat);
             var part = new InMemoryPart(anonymizedFile.fileName(), anonymizedFile.content(), mediaTypeFromUrl(anonymizedFile.fileName()));
             return success(Stream.of(part));
@@ -112,18 +110,18 @@ public class KanonimizationHttpDataSource implements DataSource {
         }
     }
 
-    // No persistent resources to release.
     @Override
     public void close() {
-        // no-op
+        // No hay recursos persistentes que liberar
     }
 
     /**
-     * Extracts anonymized dataset from zip response, prioritizing expected filename by format.
+     * Extrae el dataset anonimizado del ZIP de respuesta.
+     * Prioriza archivo esperado segun formato (dataset_anonymized.csv/json/xlsx)
+     * Fallback: cualquier archivo que coincida con dataset_anonymized*
      */
     private ExtractedFile extractAnonymizedDataset(byte[] zipBytes, String datasetFormat) {
         ExtractedFile fallback = null;
-        ExtractedFile preferred = null;
         var seenEntries = new StringBuilder();
         var preferredFileName = preferredAnonymizedFileName(datasetFormat);
 
@@ -134,29 +132,24 @@ public class KanonimizationHttpDataSource implements DataSource {
                     continue;
                 }
 
-                var entryName = entry.getName();
-                if (seenEntries.length() > 0) {
-                    seenEntries.append(", ");
-                }
-                seenEntries.append(entryName);
+                var fileName = normalizeFileName(entry.getName());
+                seenEntries.append(seenEntries.length() > 0 ? ", " : "").append(fileName);
 
-                var fileName = normalizeFileName(entryName);
+                // Lee contenido del archivo en el ZIP
                 var content = readAllBytes(zipInputStream);
 
+                // Prioridad 1: archivo con nombre exacto esperado
                 if (preferredFileName.equalsIgnoreCase(fileName)) {
-                    preferred = new ExtractedFile(fileName, content);
-                    break;
+                    return new ExtractedFile(fileName, content);
                 }
 
+                // Prioridad 2: cualquier dataset_anonymized* como fallback
                 if (fallback == null && FALLBACK_ANON_DATASET_PATTERN.matcher(fileName).matches()) {
                     fallback = new ExtractedFile(fileName, content);
                 }
             }
 
-            if (preferred != null) {
-                return preferred;
-            }
-
+            // Retorna fallback si existe
             if (fallback != null) {
                 return fallback;
             }
@@ -168,29 +161,24 @@ public class KanonimizationHttpDataSource implements DataSource {
                 .formatted(preferredFileName, seenEntries));
     }
 
+    // Determina el nombre de archivo preferido segun formato de dataset
     private String preferredAnonymizedFileName(String datasetFormat) {
-        if ("json".equalsIgnoreCase(datasetFormat)) {
-            return "dataset_anonymized.json";
-        }
-        if ("excel".equalsIgnoreCase(datasetFormat)) {
-            return "dataset_anonymized.xlsx";
-        }
-        return "dataset_anonymized.csv";
+        return switch (datasetFormat.toLowerCase()) {
+            case "json" -> "dataset_anonymized.json";
+            case "excel" -> "dataset_anonymized.xlsx";
+            default -> "dataset_anonymized.csv";
+        };
     }
 
+    // Extrae nombre de archivo de una ruta completa dentro del ZIP
     private String normalizeFileName(String entryName) {
-        var slash = entryName.lastIndexOf('/');
-        var backslash = entryName.lastIndexOf('\\');
-        var index = Math.max(slash, backslash);
-        if (index >= 0 && index + 1 < entryName.length()) {
-            return entryName.substring(index + 1);
-        }
-        return entryName;
+        var index = Math.max(entryName.lastIndexOf('/'), entryName.lastIndexOf('\\'));
+        return (index >= 0 && index + 1 < entryName.length()) 
+                ? entryName.substring(index + 1) 
+                : entryName;
     }
 
-    /**
-     * Reads all bytes from the current zip entry stream.
-     */
+    // Lee todos los bytes del stream actual (entrada de ZIP)
     private byte[] readAllBytes(InputStream inputStream) throws IOException {
         var out = new ByteArrayOutputStream();
         var buffer = new byte[8192];
@@ -201,46 +189,26 @@ public class KanonimizationHttpDataSource implements DataSource {
         return out.toByteArray();
     }
 
-    /**
-     * Detects logical dataset format from URL extension.
-     */
+    // Detecta formato logico desde extension de URL
     private String datasetFormatFromUrl(String datasetUrl) {
         var lower = datasetUrl.toLowerCase(Locale.ROOT);
-        if (lower.endsWith(".csv")) {
-            return "csv";
-        }
-        if (lower.endsWith(".json")) {
-            return "json";
-        }
-        if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
-            return "excel";
-        }
+        if (lower.endsWith(".json")) return "json";
+        if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) return "excel";
+        if (lower.endsWith(".csv")) return "csv";
         return "binary";
     }
 
-    /**
-     * Detects media type from file extension.
-     */
+    // Determina media type desde extension de archivo
     private String mediaTypeFromUrl(String value) {
         var lower = value.toLowerCase(Locale.ROOT);
-        if (lower.endsWith(".csv")) {
-            return "text/csv";
-        }
-        if (lower.endsWith(".json")) {
-            return "application/json";
-        }
-        if (lower.endsWith(".xlsx")) {
-            return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-        }
-        if (lower.endsWith(".xls")) {
-            return "application/vnd.ms-excel";
-        }
+        if (lower.endsWith(".csv")) return "text/csv";
+        if (lower.endsWith(".json")) return "application/json";
+        if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        if (lower.endsWith(".xls")) return "application/vnd.ms-excel";
         return "application/octet-stream";
     }
 
-    /**
-     * Extracts filename from URL.
-     */
+    // Convierte URL simple a nombre de archivo
     private String fileNameFromUrl(String url) {
         var lastSlash = url.lastIndexOf('/');
         if (lastSlash >= 0 && lastSlash + 1 < url.length()) {
@@ -249,43 +217,21 @@ public class KanonimizationHttpDataSource implements DataSource {
         return "dataset";
     }
 
-    /**
-     * Returns first non-blank value.
-     */
+    // Retorna el primer valor no vacio/blanco
     private String firstNonBlank(String first, String second) {
-        if (first != null && !first.isBlank()) {
-            return first;
-        }
-        if (second != null && !second.isBlank()) {
-            return second;
-        }
-        return null;
+        return (first != null && !first.isBlank()) ? first : second;
     }
 
-    /**
-     * Returns first non-blank across three candidates.
-     */
-    private String firstNonBlank(String first, String second, String third) {
-        return firstNonBlank(firstNonBlank(first, second), third);
-    }
-
-    /**
-     * Converts common true-like strings to boolean.
-     */
-    private boolean isTruthy(String value) {
-        return value != null && "true".equalsIgnoreCase(value.trim());
-    }
-
-    /**
-     * Safe object to string conversion.
-     */
+    // Conversion segura de Object a String
     private String asString(Object value) {
         return value != null ? value.toString() : null;
     }
 
+    // Representa un archivo extraido del ZIP de respuesta
     private record ExtractedFile(String fileName, byte[] content) {
     }
 
+    // Implementacion de Part para retornar contenido en memoria
     private record InMemoryPart(String name, byte[] content, String mediaType) implements Part {
         @Override
         public long size() {

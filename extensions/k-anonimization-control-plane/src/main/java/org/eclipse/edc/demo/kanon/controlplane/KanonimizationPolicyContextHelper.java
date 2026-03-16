@@ -16,8 +16,7 @@ import java.util.Optional;
 
 public final class KanonimizationPolicyContextHelper {
 
-    private KanonimizationPolicyContextHelper() {
-    }
+    private KanonimizationPolicyContextHelper() {}
 
     public static Optional<String> assetIdFrom(TransferProcessPolicyContext context) {
         if (context == null || context.contractAgreement() == null) {

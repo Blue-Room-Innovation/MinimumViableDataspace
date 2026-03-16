@@ -99,12 +99,9 @@ public class KanonimizationServiceClient {
             requestBuilder = requestBuilder.header("Authorization", "ApiKey " + apiKeyId + ":" + apiKeySecret);
         }
 
-        monitor.info("[K-ANON][DP] anonymization-call endpoint=%s datasetFormat=%s authConfigured=%s"
-                .formatted(endpoint, datasetFormat, authConfigured));
+        monitor.info("[K-ANON][DP] anonymization-call endpoint=%s datasetFormat=%s authConfigured=%s".formatted(endpoint, datasetFormat, authConfigured));
 
-        var request = requestBuilder
-                .POST(HttpRequest.BodyPublishers.ofByteArray(body))
-                .build();
+        var request = requestBuilder.POST(HttpRequest.BodyPublishers.ofByteArray(body)).build();
 
         var response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
         if (response.statusCode() >= 400) {
@@ -113,8 +110,7 @@ public class KanonimizationServiceClient {
             throw new RuntimeException("Anonymization service returned HTTP " + response.statusCode());
         }
 
-        monitor.info("[K-ANON][DP] anonymization-response status=%s bytes=%s"
-                .formatted(response.statusCode(), response.body().length));
+        monitor.info("[K-ANON][DP] anonymization-response status=%s bytes=%s".formatted(response.statusCode(), response.body().length));
 
         return response.body();
     }

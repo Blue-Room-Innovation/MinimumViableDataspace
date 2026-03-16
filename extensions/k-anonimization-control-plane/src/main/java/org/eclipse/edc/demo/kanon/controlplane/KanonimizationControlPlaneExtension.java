@@ -67,8 +67,7 @@ public class KanonimizationControlPlaneExtension implements ServiceExtension {
                 function
         );
 
-        monitor.info("[K-ANON] Registered policy function for leftOperand='%s' on scope '%s'."
-                .formatted(KanonimizationPolicyFunction.K_ANONYMIZATION_CONSTRAINT_KEY, TransferProcessPolicyContext.TRANSFER_SCOPE));
+        monitor.info("[K-ANON] Registered policy function for leftOperand='%s' on scope '%s'.".formatted(KanonimizationPolicyFunction.K_ANONYMIZATION_CONSTRAINT_KEY, TransferProcessPolicyContext.TRANSFER_SCOPE));
     }
 
     @Provider

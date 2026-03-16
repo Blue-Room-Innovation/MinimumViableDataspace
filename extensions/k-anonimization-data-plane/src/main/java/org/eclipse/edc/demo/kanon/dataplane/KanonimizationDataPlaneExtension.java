@@ -60,16 +60,12 @@ public class KanonimizationDataPlaneExtension implements ServiceExtension {
 
         var effectiveApiKeyId = firstNonBlank(
                 anonymizationServiceApiKeyId,
-                config.getString("edc.anonymization.service.apikeyid", null),
-                config.getString("edc.anonymization.service.api.key.id", null),
-                config.getString("edc.anonymization.service.api-key-id", null)
+                config.getString("edc.anonymization.service.apikeyid", null)
         );
 
         var effectiveApiKeySecret = firstNonBlank(
                 anonymizationServiceApiKeySecret,
-                config.getString("edc.anonymization.service.apikeysecret", null),
-                config.getString("edc.anonymization.service.api.key.secret", null),
-                config.getString("edc.anonymization.service.api-key-secret", null)
+                config.getString("edc.anonymization.service.apikeysecret", null)
         );
 
         if (!anonymizationEnabled) {

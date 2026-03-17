@@ -13,5 +13,5 @@ plugins {
 }
 
 dependencies {
-    implementation(libs.edc.controlplane.core)
+    compileOnly(libs.edc.controlplane.core)
 }

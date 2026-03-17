@@ -13,6 +13,6 @@ plugins {
 }
 
 dependencies {
-    implementation(libs.edc.core.runtime)
-    implementation(libs.edc.dataplane.v2)
+    compileOnly(libs.edc.core.runtime)
+    compileOnly(libs.edc.dataplane.v2)
 }

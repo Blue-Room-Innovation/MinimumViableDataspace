@@ -392,6 +392,162 @@ La extraccion de resultado anonimizado soporta:
 
 ---
 
+## 9. Modos de transferencia: HTTP PULL vs HTTP PUSH
+
+EDC soporta dos modos principales de transferencia de datos via HTTP: **PULL** y **PUSH**. La implementacion actual de k-anonimizacion funciona con ambos modos.
+
+### 9.1 HTTP PULL (Consumer-Pull)
+
+**Definicion**: El consumidor **descarga/jala** los datos desde un endpoint temporal proporcionado por el Data Plane del proveedor.
+
+**Flujo:**
+
+1. Consumer negocia contrato y solicita transferencia
+2. Provider Data Plane genera un endpoint publico temporal (EDR - Endpoint Data Reference)
+3. Consumer recibe la URL del endpoint: `http://localhost/provider-qna/public/api/public`
+4. Consumer hace **HTTP GET** al endpoint para descargar el dataset
+5. Data Plane procesa la peticion (aplica anonimizacion si corresponde) y retorna el dataset
+
+**Caracteristicas:**
+
+- ✅ Consumer controla el momento de descarga
+- ✅ Consumer puede reintentar la descarga si falla
+- ✅ Adecuado para datasets grandes (consumer puede gestionar streaming)
+- ❌ Requiere que consumer implemente logica de descarga
+- ❌ El endpoint expuesto debe ser accesible desde la red del consumer
+
+**Metodo HTTP**: `GET` (tipicamente)
+
+**Ejemplo de peticion (Postman/cURL):**
+
+```bash
+GET http://localhost/provider-qna/public/api/public
+Authorization: <auth-token-from-EDR>
+```
+
+**Usado en**: Mayoría de casos de uso, datasets bajo demanda, integraciones con herramientas de descarga.
+
+### 9.2 HTTP PUSH (Provider-Push)
+
+**Definicion**: El proveedor **envia/empuja** los datos directamente a un endpoint HTTP del consumidor.
+
+**Flujo:**
+
+1. Consumer negocia contrato y solicita transferencia, **especificando su endpoint receptor**
+2. Provider Data Plane procesa el dataset (aplica anonimizacion si corresponde)
+3. Provider hace **HTTP POST/PUT** al endpoint del consumer con el dataset
+4. Consumer recibe los datos pasivamente en su endpoint
+
+**Caracteristicas:**
+
+- ✅ Consumer no necesita implementar logica de descarga activa
+- ✅ Transferencia iniciada inmediatamente por el provider
+- ✅ Adecuado para notificaciones y entregas automaticas
+- ❌ Consumer debe exponer un endpoint HTTP accesible desde provider
+- ❌ Menos control del consumer sobre el timing de recepcion
+- ❌ Reintentos mas complejos si falla la entrega
+
+**Metodo HTTP**: `POST` o `PUT` (tipicamente)
+
+**Usado en**: Integraciones event-driven, pipelines automaticos, webhooks.
+
+### 9.3 Configuracion en EDC para cambiar de PULL a PUSH
+
+Para cambiar de PULL a PUSH, el consumer debe especificar su endpoint receptor en el **DataAddress** al solicitar la transferencia:
+
+**Transferencia PULL (actual - por defecto):**
+
+```json
+{
+  "@context": {...},
+  "@type": "TransferRequest",
+  "assetId": "asset-kanon-demo-1",
+  "contractId": "<contract-agreement-id>",
+  "dataDestination": {
+    "@type": "DataAddress",
+    "type": "HttpProxy"  // Consumer descarga desde endpoint del provider
+  },
+  "protocol": "dataspace-protocol-http",
+  "transferType": "HttpData-PULL"
+}
+```
+
+**Transferencia PUSH (consumer especifica su endpoint):**
+
+```json
+{
+  "@context": {...},
+  "@type": "TransferRequest",
+  "assetId": "asset-kanon-demo-1",
+  "contractId": "<contract-agreement-id>",
+  "dataDestination": {
+    "@type": "DataAddress",
+    "type": "HttpData",
+    "baseUrl": "http://consumer-receiver:8080/api/receive-data",  // Endpoint del consumer
+    "method": "POST",
+    "contentType": "application/octet-stream"
+  },
+  "protocol": "dataspace-protocol-http",
+  "transferType": "HttpData-PUSH"
+}
+```
+
+### 9.4 Compatibilidad de k-anonimizacion con PULL y PUSH
+
+**Buenas noticias: La implementacion actual de k-anonimizacion funciona con AMBOS modos sin modificacion de codigo.**
+
+**Razon:**
+
+- La anonimizacion se ejecuta en el **Data Plane** durante la lectura del dataset (`KanonimizationHttpDataSource.openPartStream()`)
+- El modo PULL/PUSH solo afecta **como se entrega** el resultado al consumer, no el procesamiento interno
+- En PULL: DP retorna el stream anonimizado como respuesta HTTP al consumer
+- En PUSH: DP envia el stream anonimizado via HTTP POST al endpoint del consumer
+
+**No se requieren cambios de codigo en las extensiones k-anonimization para soportar PUSH.**
+
+### 9.5 Prueba de transferencia PUSH en Postman
+
+Para probar PUSH, el consumer necesita:
+
+1. **Exponer un endpoint receptor** (servidor HTTP simple que acepte POST):
+
+```bash
+# Ejemplo con Python
+python3 -m http.server 8080
+
+# O con Node.js (express)
+# Crear servidor que escuche POST en /api/receive-data
+```
+
+2. **Modificar TransferRequest en Postman** para especificar `dataDestination` con el endpoint del consumer.
+
+3. **Verificar logs del Data Plane** para confirmar que el POST al endpoint del consumer fue exitoso.
+
+### 9.6 Diferencias clave (resumen)
+
+| Aspecto                 | PULL                             | PUSH                                  |
+| ----------------------- | -------------------------------- | ------------------------------------- |
+| Iniciador de descarga   | Consumer                         | Provider                              |
+| Metodo HTTP             | GET (consumer → provider)        | POST/PUT (provider → consumer)        |
+| Endpoint expuesto       | Provider Data Plane              | Consumer                              |
+| Control de timing       | Consumer decide cuando descargar | Provider envia inmediatamente         |
+| Reintentos              | Consumer puede reintentar GET    | Provider debe implementar retry logic |
+| Implementacion consumer | Debe hacer HTTP GET activamente  | Debe exponer HTTP endpoint pasivo     |
+| Uso en k-anon PoC       | ✅ Funciona (modo por defecto)   | ✅ Funciona (sin cambios de codigo)   |
+
+### 9.7 Recomendacion para esta PoC
+
+**Continuar usando HTTP PULL** por las siguientes razones:
+
+- ✅ Mas simple para pruebas (no requiere exponer endpoint del consumer)
+- ✅ Mejor para datasets grandes con posible retry
+- ✅ Modo por defecto en EDC
+- ✅ Facilita debugging (consumer decide cuando descargar)
+
+HTTP PUSH es mas util en escenarios productivos con pipelines automatizados o integraciones event-driven.
+
+---
+
 ## Anexo A - Archivos clave implementados
 
 ### Control Plane

@@ -22,6 +22,7 @@ dependencies {
     runtimeOnly(project(":extensions:k-anonimization-data-plane"))
     runtimeOnly(libs.edc.bom.dataplane)
     runtimeOnly(libs.edc.dataplane.v2)
+    runtimeOnly(libs.edc.dataplane.http)
 
     if (project.properties.getOrDefault("persistence", "false") == "true") {
         runtimeOnly(libs.edc.vault.hashicorp)

@@ -34,9 +34,9 @@ import static org.eclipse.edc.connector.dataplane.spi.pipeline.StreamResult.succ
  * 
  * Flujo:
  * 1. Lee la URL del dataset (baseUrl) desde sourceDataAddress
- * 2. Verifica si existe señal de anonimizacion desde Control Plane (kanon.policyConfigUrl en flowProperties)
+ * 2. Verifica si existe señal de anonimizacion desde Control Plane (kanon.enabled en flowProperties)
  * 3. Si NO hay señal de anonimizacion -> descarga y retorna dataset original
- * 4. Si hay señal de anonimizacion -> llama servicio externo, recibe ZIP, extrae dataset anonimizado
+ * 4. Si hay señal de anonimizacion -> valida parametros tecnicos, llama servicio externo y extrae dataset anonimizado
  */
 public class KanonimizationHttpDataSource implements DataSource {
 
@@ -78,35 +78,35 @@ public class KanonimizationHttpDataSource implements DataSource {
                 return error("[K-ANON][DP] Missing baseUrl for request " + requestId);
             }
 
-            // 2. Busca señal de anonimizacion (policyConfigUrl propagada desde Control Plane)
-            var policyConfigUrl = firstNonBlank(
-                    flowProperties.get("kanon.policyConfigUrl"),
-                    asString(sourceDataAddress.getProperty("kanon.policyConfigUrl"))
-            );
+            // 2. Resuelve señal contractual de anonimizacion y parametros tecnicos propagados desde Control Plane
+            var enabledValue = firstNonBlank(flowProperties.get("kanon.enabled"), asString(sourceDataAddress.getProperty("kanon.enabled")));
+            var policyConfigUrl = firstNonBlank(flowProperties.get("kanon.policyConfigUrl"), asString(sourceDataAddress.getProperty("kanon.policyConfigUrl")));
             var assetId = firstNonBlank(flowProperties.get("kanon.assetId"), flowAssetId);
+            var anonymizationEnabled = resolveAnonymizationEnabled(enabledValue, policyConfigUrl);
 
             // 3. Si NO existe señal de anonimizacion -> retorna dataset original
-            if (policyConfigUrl == null || policyConfigUrl.isBlank()) {
-                monitor.info("[K-ANON][DP] detection=false requestId=%s processId=%s agreementId=%s assetId=%s"
-                        .formatted(requestId, processId, agreementId, assetId));
+            if (!anonymizationEnabled) {
+                monitor.info("[K-ANON][DP] detection=false requestId=%s processId=%s agreementId=%s assetId=%s".formatted(requestId, processId, agreementId, assetId));
                 var original = client.downloadFile(datasetUrl);
                 var mediaType = mediaTypeFromUrl(datasetUrl);
                 var part = new InMemoryPart(fileNameFromUrl(datasetUrl), original, mediaType);
                 return success(Stream.of(part));
             }
 
+            if (hasExplicitEnabledFlag(enabledValue) && (policyConfigUrl == null || policyConfigUrl.isBlank())) {
+                return error("[K-ANON][DP] requestId=%s processId=%s agreementId=%s assetId=%s anonymization enabled but kanon.policyConfigUrl is missing".formatted(requestId, processId, agreementId, assetId));
+            }
+
             // 4. Existe señal de anonimizacion -> ejecuta anonimizacion via servicio externo
             var datasetFormat = datasetFormatFromUrl(datasetUrl);
-            monitor.info("[K-ANON][DP] detection=true requestId=%s processId=%s agreementId=%s assetId=%s"
-                    .formatted(requestId, processId, agreementId, assetId));
+            monitor.info("[K-ANON][DP] detection=true requestId=%s processId=%s agreementId=%s assetId=%s".formatted(requestId, processId, agreementId, assetId));
 
             var zipBytes = client.anonymizeFromUrls(datasetUrl, policyConfigUrl, datasetFormat);
             var anonymizedFile = extractAnonymizedDataset(zipBytes, datasetFormat);
             var part = new InMemoryPart(anonymizedFile.fileName(), anonymizedFile.content(), mediaTypeFromUrl(anonymizedFile.fileName()));
             return success(Stream.of(part));
         } catch (Exception e) {
-            return error("[K-ANON][DP] requestId=%s processId=%s agreementId=%s failed: %s"
-                    .formatted(requestId, processId, agreementId, e.getMessage()));
+            return error("[K-ANON][DP] requestId=%s processId=%s agreementId=%s failed: %s".formatted(requestId, processId, agreementId, e.getMessage()));
         }
     }
 
@@ -157,8 +157,7 @@ public class KanonimizationHttpDataSource implements DataSource {
             throw new RuntimeException("Failed to unzip anonymization response: " + e.getMessage(), e);
         }
 
-        throw new RuntimeException("Anonymization response zip does not contain expected '%s' nor dataset_anonymized* fallback. Entries found: [%s]"
-                .formatted(preferredFileName, seenEntries));
+        throw new RuntimeException("Anonymization response zip does not contain expected '%s' nor dataset_anonymized* fallback. Entries found: [%s]".formatted(preferredFileName, seenEntries));
     }
 
     // Determina el nombre de archivo preferido segun formato de dataset
@@ -220,6 +219,17 @@ public class KanonimizationHttpDataSource implements DataSource {
     // Retorna el primer valor no vacio/blanco
     private String firstNonBlank(String first, String second) {
         return (first != null && !first.isBlank()) ? first : second;
+    }
+
+    private boolean resolveAnonymizationEnabled(String enabledValue, String policyConfigUrl) {
+        if (hasExplicitEnabledFlag(enabledValue)) {
+            return Boolean.parseBoolean(enabledValue.trim());
+        }
+        return policyConfigUrl != null && !policyConfigUrl.isBlank();
+    }
+
+    private boolean hasExplicitEnabledFlag(String enabledValue) {
+        return enabledValue != null && !enabledValue.isBlank();
     }
 
     // Conversion segura de Object a String

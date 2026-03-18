@@ -38,6 +38,7 @@ public class KanonimizationDataFlowPropertiesProvider implements DataFlowPropert
 
     /**
      * Inyecta propiedades kanon.* en el flujo de datos cuando existe señal de anonimizacion.
+     * kanon.enabled es la señal primaria; el resto son parametros tecnicos opcionales.
      *
      * @param transferProcess proceso de transferencia actual
      * @param policy politica evaluada durante la transferencia
@@ -57,8 +58,12 @@ public class KanonimizationDataFlowPropertiesProvider implements DataFlowPropert
 
         var properties = new HashMap<String, String>();
         properties.put("kanon.enabled", Boolean.toString(signal.enabled()));
-        properties.put("kanon.assetId", signal.assetId());
-        properties.put("kanon.policyConfigUrl", signal.policyConfigUrl());
+        if (signal.assetId() != null && !signal.assetId().isBlank()) {
+            properties.put("kanon.assetId", signal.assetId());
+        }
+        if (signal.policyConfigUrl() != null && !signal.policyConfigUrl().isBlank()) {
+            properties.put("kanon.policyConfigUrl", signal.policyConfigUrl());
+        }
 
         monitor.info("[K-ANON] processId=%s agreementId=%s propagated to DP properties: kanon.enabled=%s kanon.assetId=%s".formatted(processId, agreementId, signal.enabled(), signal.assetId()));
 

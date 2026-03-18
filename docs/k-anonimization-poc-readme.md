@@ -1,185 +1,122 @@
-senal# K-Anonimization en MVD/EDC: README Tecnico de la PoC
+# K-Anonimization en MVD/EDC
 
-Este documento resume la extension implementada para evaluar y ejecutar k-anonimizacion en el flujo de transferencia de EDC dentro de MVD.
+Este documento describe la PoC de k-anonimizacion desde una perspectiva funcional y de caso de uso.
 
-## 1. Se ha identificado el punto o puntos del conector EDC donde resulta viable implementar una extension para evaluar si un asset debe anonimizarse
+La idea es explicar:
 
-Se identificaron dos puntos tecnicos viables y complementarios:
+- que problema se ha identificado,
+- como se expresa ese requisito en la policy del contrato,
+- que configuracion minima necesita el asset,
+- que comportamiento funcional cabe esperar en una transferencia,
+- y cuando conviene pasar al documento tecnico detallado.
 
-1. Control Plane (evaluacion de politica de contrato)
+Para el detalle clase por clase y el flujo interno exacto de Control Plane y Data Plane, consultar [docs/k-anonimization-extensions-deep-dive.md](docs/k-anonimization-extensions-deep-dive.md).
 
-- Punto de extension: registro de una funcion de politica sobre el scope de transferencia.
-- Ubicacion principal:
-  - extensions/k-anonimization-control-plane/src/main/java/org/eclipse/edc/demo/kanon/controlplane/KanonimizationControlPlaneExtension.java
-  - extensions/k-anonimization-control-plane/src/main/java/org/eclipse/edc/demo/kanon/controlplane/KanonimizationPolicyFunction.java
-- Rol: decidir si la transferencia esta marcada para k-anonimizacion y preparar la señal para Data Plane.
+## 1. Caso de uso identificado
 
-2. Data Plane (ejecucion de transformacion de datos)
+Se ha identificado un caso de uso en el que un proveedor quiere compartir un dataset, pero el intercambio debe exigir un procesamiento previo de anonimizacion antes de entregar los datos al consumidor.
 
-- Punto de extension: DataSourceFactory para tipo HttpData dentro del pipeline.
-- Ubicacion principal:
-  - extensions/k-anonimization-data-plane/src/main/java/org/eclipse/edc/demo/kanon/dataplane/KanonimizationDataPlaneExtension.java
-  - extensions/k-anonimization-data-plane/src/main/java/org/eclipse/edc/demo/kanon/dataplane/KanonimizationHttpDataSourceFactory.java
-  - extensions/k-anonimization-data-plane/src/main/java/org/eclipse/edc/demo/kanon/dataplane/KanonimizationHttpDataSource.java
-- Rol: ejecutar la anonimización real durante la lectura de datos, no en la negociacion contractual.
+Ejemplo conceptual:
 
-Conclusion de este punto: la decision de negocio/politica ocurre en CP y la manipulacion de bytes ocurre en DP.
+- el proveedor publica un dataset potencialmente sensible,
+- el contrato indica que ese dataset solo puede transferirse bajo condicion de anonimización,
+- el conector EDC detecta esa condicion,
+- y el Data Plane entrega al consumidor el resultado anonimizado en lugar del dataset bruto.
 
-## 2. Se ha definido una propuesta minima de politica o criterio tecnico para marcar un asset como susceptible de k-anonimizacion
+La separacion funcional es esta:
 
-La propuesta minima implementada es:
+- Control Plane: interpreta la policy del contrato y marca la transferencia.
+- Data Plane: ejecuta la transformacion sobre el contenido que se entrega.
 
-1. Politica de contrato
+## 2. Criterio minimo de activacion
 
-- Constraint en policy: leftOperand = KAnonymization, operator = EQ, rightOperand = true.
-- Si KAnonymization != true (o el constraint no existe), no se activa el comportamiento de anonimizacion.
+La PoC se activa con dos piezas de informacion:
 
-2. Metadatos del asset (validacion adicional)
+1. La policy del contrato expresa la exigencia de anonimización.
+2. El asset aporta la URL de la policy tecnica de anonimización.
 
-- kanon.policyConfigUrl = URL accesible del archivo de politica de anonimización
+### 2.1 Policy del contrato
 
-Regla minima efectiva:
+La policy marca la obligacion de anonimizar mediante un constraint:
 
-- La anonimizacion se ejecuta SOLO cuando la policy exige KAnonymization=true Y el asset contiene kanon.policyConfigUrl no vacio.
-- **Si la policy requiere KAnonymization=true pero el asset no tiene kanon.policyConfigUrl**, la transferencia se rechaza en Control Plane con un error (fail-fast), evitando consumir recursos en una transferencia que no puede completarse correctamente.
-- **Nota importante**: El atributo `kAnonimizacion` del asset ya NO se utiliza. La decision se basa unicamente en el constraint de la politica.
+- `leftOperand = KAnonymization`
+- `operator = eq`
+- `rightOperand = true`
 
-## 3. Se ha implementado una extension basica o prueba de concepto que permita evaluar esa condicion sobre un asset
+Interpretacion funcional:
 
-Si, esta implementada y operativa como PoC funcional (no solo esqueleto).
+- si `KAnonymization=true`, la transferencia queda marcada para anonimizacion;
+- si no existe ese constraint, o el valor no es `true`, el flujo continua sin anonimizacion.
 
-### 3.1 Que se implemento
+### 2.2 Metadato tecnico del asset
 
-1. Modulos nuevos
+El asset debe exponer:
 
-- extensions/k-anonimization-control-plane
-- extensions/k-anonimization-data-plane
+- `kanon.policyConfigUrl`
 
-2. Wiring en build
+Ese valor apunta al recurso tecnico que el Data Plane necesita para ejecutar la anonimización real.
 
-- settings.gradle.kts incluye ambos modulos.
-- launchers/controlplane/build.gradle.kts agrega runtimeOnly(project(":extensions:k-anonimization-control-plane")).
-- launchers/dataplane/build.gradle.kts agrega runtimeOnly(project(":extensions:k-anonimization-data-plane")).
+## 3. Regla funcional actual
 
-3. Extension de Control Plane
+La regla funcional es la siguiente:
 
-- Registra la funcion de politica para KAnonymization en TransferProcessPolicyContext.TRANSFER_SCOPE.
-- Resuelve asset desde AssetIndex.
-- Lee metadatos desde properties y dataAddress del asset (busca kanon.policyConfigUrl).
-- Valida que exista policyConfigUrl cuando la politica requiere KAnonymization=true.
-- Si falta policyConfigUrl cuando se requiere anonimizacion: niega la transferencia con error SEVERE.
-- Si todo es valido: almacena señal de propagacion (agreementId -> assetId, policyConfigUrl, enabled=true).
-- Publica propiedades CP -> DP via DataFlowPropertiesProvider.
+1. La policy de contrato activa la señal principal de anonimización en el Control Plane.
+2. Esa señal viaja al Data Plane como `kanon.enabled=true`.
+3. El Data Plane usa `kanon.enabled` como fuente de verdad para decidir si entra en la rama de anonimización.
+4. `kanon.policyConfigUrl` es un parametro tecnico adicional que el DP necesita para ejecutar la anonimización.
+5. Si `kanon.enabled=true` pero falta `kanon.policyConfigUrl`, el fallo ocurre en el **Data Plane** al intentar ejecutar la anonimización.
 
-4. Extension de Data Plane
+En una frase:
 
-- Registra factory para HttpData cuando edc.anonymization.enabled=true y existe edc.anonymization.service.url.
-- El DataSource decide si anonimiza usando prioridad:
-  - propiedades propagadas (kanon.\*),
-  - fallback a metadatos en sourceDataAddress.
-- Si no aplica anonimización: reenvia dataset original.
-- Si aplica anonimización:
-  - descarga dataset y policy desde URL,
-  - invoca API externa via multipart,
-  - recibe ZIP,
-  - extrae entrada dataset*anonymized*_._,
-  - retorna stream anonimizado al consumidor.
+- la policy decide la intencion contractual (señal: `kanon.enabled`),
+- la URL de policy decide si esa intencion se puede ejecutar correctamente (soporte: `kanon.policyConfigUrl`).
 
-### 3.2 Caso de uso (teorico)
+## 4. Comportamiento esperado
 
-- Un proveedor publica un asset y lo oferta con contrato que exige KAnonymization=true.
-- En la transferencia, CP valida que el asset esta marcado y que la policy de anonimización existe.
-- CP propaga las banderas tecnicas al flujo.
-- DP ejecuta la anonimización antes de entregar el contenido.
+### 4.1 Escenario principal
 
-### 3.3 Flujo end-to-end (tecnico)
+Si el contrato exige anonimización y el asset tiene `kanon.policyConfigUrl`:
 
-1. Negociacion y policy evaluation en CP.
-2. Funcion KanonimizationPolicyFunction detecta KAnonymization=true.
-3. Se obtiene assetId desde ContractAgreement.
-4. Se consulta AssetIndex y se lee kanon.policyConfigUrl desde metadatos del asset.
-5. Si policyConfigUrl falta, se RECHAZA la transferencia con error (fail-fast).
-6. Si todo es valido, se guarda señal en KanonimizationPropagationStore.
-7. DataFlowPropertiesProvider toma la señal y la inyecta en properties del data flow.
-8. DP recibe DataFlowStartMessage con kanon.enabled, kanon.assetId, kanon.policyConfigUrl.
-9. KanonimizationHttpDataSource ejecuta descarga + llamada API + extraccion ZIP.
-10. Se retorna dataset anonimizado al consumidor.
+- la transferencia queda marcada como anonimizable,
+- el Data Plane ejecuta la llamada al servicio externo,
+- y el consumidor recibe el dataset anonimizado.
 
-### 3.4 Matriz de escenarios y comportamiento
+### 4.2 Escenario sin anonimización
 
-La siguiente tabla documenta el comportamiento del sistema ante diferentes combinaciones de configuracion de politica y asset:
+Si el contrato no exige `KAnonymization=true`:
 
-| #   | Policy KAnonymization            | Asset kanon.policyConfigUrl | Comportamiento CP                                 | Comportamiento DP        | Resultado Final               |
-| --- | -------------------------------- | --------------------------- | ------------------------------------------------- | ------------------------ | ----------------------------- |
-| 1   | `true`                           | ✓ presente y valida         | ✓ Almacena señal, permite transferencia           | ✓ Ejecuta anonimización  | Dataset anonimizado entregado |
-| 2   | `true`                           | ✗ ausente o vacia           | ✗ **FALLA** con error SEVERE, niega transferencia | N/A (no llega)           | Transferencia rechazada en CP |
-| 3   | `false`                          | ✓ presente                  | ✓ Permite sin señal                               | Retorna dataset original | Dataset original entregado    |
-| 4   | `false`                          | ✗ ausente                   | ✓ Permite sin señal                               | Retorna dataset original | Dataset original entregado    |
-| 5   | ausente (constraint no definido) | cualquiera                  | N/A (funcion no invocada)                         | Retorna dataset original | Dataset original entregado    |
+- el flujo no activa la rama de anonimización,
+- y el consumidor recibe el dataset original.
 
-**Notas importantes:**
+### 4.3 Escenario con configuracion incompleta
 
-- **Escenario #1** (caso de uso principal): Policy requiere anonimizacion Y asset tiene policyConfigUrl → se ejecuta anonimizacion.
-- **Escenario #2** (validacion fail-fast): Policy requiere anonimizacion pero falta policyConfigUrl → transferencia rechazada inmediatamente en CP con error SEVERE reportado via `context.reportProblem()`.
-- **Escenarios #3, #4, #5**: Cuando no se requiere anonimizacion (policy false o ausente), siempre se retorna el dataset original independientemente de los metadatos del asset.
+Si el contrato exige `KAnonymization=true` pero el asset no tiene `kanon.policyConfigUrl`:
 
-**Principio de diseño: Fail-fast con configuracion simplificada**
+- el Control Plane propaga `kanon.enabled=true` sin rechazar la transferencia,
+- el Data Plane entra en la rama de anonimización,
+- pero falla porque no dispone de la configuracion tecnica necesaria.
 
-La validación estricta en Control Plane (escenario #2) implementa el principio de "fail-fast": detectar configuraciones incorrectas lo antes posible.
-Se requiere definir `kanon.policyConfigUrl` en el asset cuando se vaya a usar anonimizacion.
+Esto deja clara la diferencia entre:
 
-### 3.5 Ejemplos de body de peticiones (management API)
+- señal contractual: `kanon.enabled`
+- configuracion operativa: `kanon.policyConfigUrl`
 
-Los siguientes ejemplos estan adaptados al caso real de esta PoC (mismos IDs, context y URLs propuestos).
+## 5. Flujo funcional end-to-end
 
-#### 3.5.1 Crear asset
+El flujo funcional, sin entrar en detalle de clases, es el siguiente:
 
-```json
-{
-  "@context": ["https://w3id.org/edc/connector/management/v0.0.1"],
-  "@id": "asset-kanon-demo-1",
-  "@type": "Asset",
-  "properties": {
-    "edc:name": "KAnon demo asset",
-    "edc:description": "PoC asset para deteccion de KAnonymization en control-plane",
-    "edc:contenttype": "application/csv"
-  },
-  "dataAddress": {
-    "type": "HttpData",
-    "baseUrl": "http://host.docker.internal:8088/medical_example.csv",
-    "proxyMethod": "true",
-    "proxyPath": "true",
-    "proxyQueryParams": "true",
-    "proxyBody": "true",
-    "kanon.policyConfigUrl": "http://host.docker.internal:8088/medical_example_policy.json"
-  }
-}
-```
+1. El proveedor publica un asset HTTP.
+2. El proveedor asocia una policy de contrato que exige `KAnonymization=true`.
+3. El consumidor negocia contrato y solicita transferencia.
+4. El Control Plane detecta que esa transferencia debe anonimizarse.
+5. El Control Plane propaga la señal `kanon.enabled=true` al flujo hacia Data Plane.
+6. El Data Plane recibe la transferencia.
+7. Si la transferencia esta marcada y tiene la configuracion tecnica necesaria, ejecuta la anonimización.
+8. El consumidor recibe el resultado final.
 
-#### 3.5.2 Crear politica de acceso
+## 6. Ejemplo minimo de policy
 
-```json
-{
-  "@context": ["https://w3id.org/edc/connector/management/v0.0.1"],
-  "@type": "PolicyDefinition",
-  "@id": "access-require-membership-kanon-demo",
-  "policy": {
-    "@type": "Set",
-    "permission": [
-      {
-        "action": "use",
-        "constraint": {
-          "leftOperand": "MembershipCredential",
-          "operator": "eq",
-          "rightOperand": "active"
-        }
-      }
-    ]
-  }
-}
-```
-
-#### 3.5.3 Crear politica de contrato
+Ejemplo de policy de contrato:
 
 ```json
 {
@@ -202,373 +139,99 @@ Los siguientes ejemplos estan adaptados al caso real de esta PoC (mismos IDs, co
 }
 ```
 
-#### 3.5.4 Crear definicion de contrato
+## 7. Ejemplo minimo de asset
+
+Ejemplo simplificado de asset HTTP con la URL de policy tecnica:
 
 ```json
 {
   "@context": ["https://w3id.org/edc/connector/management/v0.0.1"],
-  "@type": "ContractDefinition",
-  "@id": "contractdef-kanon-demo-1",
-  "accessPolicyId": "access-require-membership-kanon-demo",
-  "contractPolicyId": "contract-require-kanonymization-demo",
-  "assetsSelector": {
-    "@type": "Criterion",
-    "operandLeft": "https://w3id.org/edc/v0.0.1/ns/id",
-    "operator": "=",
-    "operandRight": "asset-kanon-demo-1"
+  "@id": "asset-kanon-demo-1",
+  "@type": "Asset",
+  "properties": {
+    "edc:name": "KAnon demo asset",
+    "edc:contenttype": "application/csv"
+  },
+  "dataAddress": {
+    "type": "HttpData",
+    "baseUrl": "http://host.docker.internal:8088/medical_example.csv",
+    "kanon.policyConfigUrl": "http://host.docker.internal:8088/medical_example_policy.json"
   }
 }
 ```
 
-Notas practicas:
+## 8. Matriz funcional de escenarios
 
-1. Mantener consistencia entre IDs de asset/policies/contract definition.
-2. En entornos Docker/Kind usando servicio en host, usar host.docker.internal en URLs.
-3. Si el runtime corre directamente en host, reemplazar host.docker.internal por localhost.
-4. Segun version/configuracion de management API, assetsSelector puede aceptarse como objeto Criterion o como arreglo de Criterion. Si tu endpoint rechaza objeto, envolverlo en una lista.
+| #   | Policy `KAnonymization` | Asset `kanon.policyConfigUrl` | Comportamiento CP            | Comportamiento DP              | Resultado funcional                |
+| --- | ----------------------- | ----------------------------- | ---------------------------- | ------------------------------ | ---------------------------------- |
+| 1   | `true`                  | presente                      | Propaga `kanon.enabled=true` | Ejecuta anonimización          | Se ejecuta anonimización           |
+| 2   | `true`                  | ausente                       | Propaga `kanon.enabled=true` | **Falla** al intentar ejecutar | El DP falla al intentar anonimizar |
+| 3   | `false`                 | presente                      | No propaga señal activa      | Retorna dataset original       | Se entrega dataset original        |
+| 4   | `false`                 | ausente                       | No propaga señal activa      | Retorna dataset original       | Se entrega dataset original        |
+| 5   | ausente                 | cualquiera                    | Funcion no invocada          | Retorna dataset original       | Se entrega dataset original        |
 
-## 4. Se ha identificado que informacion debe vivir en la politica, en los metadatos del asset o en ambos
+**Nota sobre el escenario #2:** cuando la policy exige anonimización pero falta `kanon.policyConfigUrl`, el Control Plane no rechaza la transferencia. La transferencia avanza con `kanon.enabled=true` y es el Data Plane quien detecta la configuracion incompleta y falla al intentar ejecutar la anonimización.
 
-Separacion recomendada e implementada:
+## 9. Modos de transferencia HTTP
 
-1. En la politica (contrato)
+La PoC sigue siendo compatible con los modos HTTP PULL y HTTP PUSH de EDC.
 
-- KAnonymization=true como requisito normativo del intercambio.
-- Semantica: "este intercambio exige anonimización".
+### 9.1 PULL
 
-2. En metadatos del asset
+En modo PULL:
 
-- kanon.policyConfigUrl con el recurso tecnico de configuracion de anonimización.
+- el consumidor descarga desde el endpoint expuesto por el proveedor,
+- y el Data Plane del proveedor entrega el dataset ya anonimizado o el original segun corresponda.
 
-3. En ambos
+### 9.2 PUSH
 
-- La activacion final requiere ambos lados:
-  - voluntad contractual (policy),
-  - viabilidad tecnica y parametros (asset metadata).
+En modo PUSH:
 
-Esto evita forzar anonimización sin contexto contractual y evita contratos imposibles de ejecutar tecnicamente.
+- el consumidor expone un endpoint receptor,
+- y el Data Plane del proveedor empuja al endpoint del consumidor el resultado del flujo.
 
-## 5. Se ha documentado la dificultad tecnica de evolucion desde esta extension basica hacia una anonimización real de datos
+La ruta de anonimización no depende del modo PULL o PUSH; depende de la señal de policy y de la configuracion tecnica disponible.
 
-Dificultad estimada: media-alta.
+## 10. Dependencias funcionales de la PoC
 
-Ya se implemento una anonimización real basica (llamada HTTP externa + ZIP), pero para evolucionar a un nivel productivo se requiere:
+Para que el flujo funcione, se necesita:
 
-1. Robustez operativa
+1. Una policy de contrato con `KAnonymization=true`.
+2. Un asset `HttpData` con `baseUrl`.
+3. Un `kanon.policyConfigUrl` accesible cuando se quiera ejecutar anonimización real.
+4. Un Data Plane con el servicio de anonimización configurado.
 
-- retries con backoff, circuit breaker, timeout diferenciado por etapa (download/policy/api).
-- control de tamaño de archivos y streaming para datasets grandes.
+Configuracion relevante del DP:
 
-2. Seguridad
+- `edc.anonymization.enabled=true`
+- `edc.anonymization.service.url=...`
+- opcionalmente `edc.anonymization.service.apiKeyId`
+- opcionalmente `edc.anonymization.service.apiKeySecret`
+- `edc.anonymization.timeout.seconds=...`
 
-- gestion de secretos via vault y rotacion de API keys.
-- endurecimiento de acceso a policy URLs y dataset URLs.
-- trazabilidad y redaccion de logs sensibles.
+## 11. Limitaciones que conviene conocer
 
-3. Consistencia y estado
+Aunque este documento es funcional, hay varias limitaciones practicas que afectan al uso de la PoC:
 
-- el store CP de propagacion es in-memory y efimero.
-- para escenarios distribuidos se requiere mecanismo persistente o correlacion robusta entre nodos.
+1. La propagacion entre CP y DP esta pensada como PoC, no como solucion distribuida endurecida.
+2. El procesamiento real depende de un servicio externo de anonimización.
+3. El soporte actual esta centrado en `HttpData`.
+4. El Data Plane carga el contenido completo en memoria en esta implementacion.
 
-4. Contrato de integracion con servicio externo
+## 12. Cuando leer el deep dive tecnico
 
-- versionado de API, validaciones de formato, codigos de error estables.
-- garantia de estructura de ZIP y convencion de nombres de salida.
+Este README es suficiente si quieres entender:
 
-5. Observabilidad
+- el caso de uso,
+- la idea funcional,
+- la policy minima,
+- el ejemplo de asset,
+- y el comportamiento observable.
 
-- metricas de latencia, tasa de error, throughput y tamaño procesado.
-- correlacion de requestId/processId/agreementId entre CP, DP y servicio de anonimización.
+Debes pasar a [docs/k-anonimization-extensions-deep-dive.md](docs/k-anonimization-extensions-deep-dive.md) si quieres entender:
 
-## 6. Se han identificado dependencias, riesgos y limitaciones tecnicas de la aproximacion
-
-### 6.1 Dependencias
-
-1. EDC runtime y APIs usadas
-
-- PolicyEngine, RuleBindingRegistry, TransferProcessPolicyContext
-- DataFlowPropertiesProvider
-- PipelineService, DataSourceFactory, DataFlowStartMessage
-
-2. Servicio externo de anonimización
-
-- Endpoint configurable por edc.anonymization.service.url
-- Credenciales via edc.anonymization.service.apiKeyId y edc.anonymization.service.apiKeySecret
-
-3. Configuracion de entorno
-
-- deployment/assets/env/provider_connector_qna.env
-- deployment/assets/env/provider_connector_manufacturing.env
-
-### 6.2 Riesgos
-
-1. Dependencia fuerte de disponibilidad del servicio externo.
-2. Posibles fallos por URLs no alcanzables o politicas mal formadas.
-3. Posible crecimiento de memoria por manejo de archivos en byte[] (dataset/policy/zip).
-4. Riesgo de fugas de secretos si se configuraran logs inadecuados.
-
-### 6.3 Limitaciones actuales
-
-1. Propagacion CP->DP basada en store en memoria (no distribuida).
-2. Convencion fija de archivo esperado en ZIP: dataset*anonymized*_._.
-3. Soporte centrado en HttpData.
-4. Sin mecanismo avanzado de retries/backoff/circuit breaker en esta iteracion.
-
-## 7. Se ha generado una conclusion tecnica con recomendacion de siguiente paso: continuar, replantear o desacoplar la anonimización fuera del conector
-
-Conclusion tecnica:
-
-- La aproximacion es viable y ya demostro factibilidad end-to-end dentro del conector.
-- El patron CP decide y DP transforma es correcto para EDC.
-
-Recomendacion:
-
-- Continuar, pero con hardening tecnico antes de escalar a produccion.
-
-Plan sugerido de siguiente paso:
-
-1. Endurecer la integracion DP con patrones de resiliencia y control de tamaño/streaming.
-2. Reemplazar store in-memory por mecanismo de propagacion/correlacion apto para despliegues distribuidos.
-3. Formalizar contrato tecnico con el servicio de anonimización (versionado, errores, payloads, SLA).
-4. Incorporar observabilidad completa y pruebas de carga/fallo.
-
-Si el objetivo futuro exige alta independencia operativa o multiples algoritmos de anonimización, se puede evaluar desacoplar parte del procesamiento en un servicio especializado, manteniendo en EDC la decision de politica y la orquestacion del flujo.
-
-## 8. Limpieza de codigo y estrategia de logs (trazabilidad)
-
-Se simplifico el codigo para mantener funcionalidad y reducir ruido de observabilidad.
-
-### 8.1 Logs que se conservan
-
-1. Deteccion de anonimización (true/false)
-
-- CP: decision de politica/metadata en evaluacion de contrato.
-- DP: decision final por transferencia (`detection=true` o `detection=false`).
-
-2. Llamada al endpoint de k-anonimizacion
-
-- Log con endpoint, formato de dataset y si hay auth configurada.
-
-3. Respuesta del endpoint de k-anonimizacion
-
-- Log con status HTTP y tamano de body recibido.
-
-4. Errores
-
-- Errores de descarga, llamada HTTP y extraccion ZIP.
-- En errores de ZIP se incluyen entries encontradas para diagnostico.
-
-### 8.2 Logs eliminados por ruido o riesgo
-
-1. Logs de credenciales en claro (apiKeyId/apiKeySecret).
-2. Logs redundantes del request builder y checks duplicados.
-3. Logs de bajo valor operativo en startup que no aportaban trazabilidad funcional.
-
-### 8.3 Simplificaciones de codigo realizadas
-
-1. Se centralizo la decision de auth configurada en un helper (`hasCredentials`).
-2. Se redujeron logs repetidos en el cliente HTTP.
-3. Se mantuvo una ruta de extraccion ZIP clara:
-
-- archivo esperado segun formato (`dataset_anonymized.csv`, `dataset_anonymized.json`, `dataset_anonymized.xlsx`),
-- fallback `dataset_anonymized*` para compatibilidad.
-
-### 8.4 Compatibilidad de formatos de salida
-
-La extraccion de resultado anonimizado soporta:
-
-1. CSV
-
-- Prioridad: `dataset_anonymized.csv`
-
-2. JSON
-
-- Prioridad: `dataset_anonymized.json`
-
-3. Excel
-
-- Prioridad: `dataset_anonymized.xlsx`
-- Fallback por patron para variantes (`dataset_anonymized*.xls*`)
-
----
-
-## 9. Modos de transferencia: HTTP PULL vs HTTP PUSH
-
-EDC soporta dos modos principales de transferencia de datos via HTTP: **PULL** y **PUSH**. La implementacion actual de k-anonimizacion funciona con ambos modos.
-
-### 9.1 HTTP PULL (Consumer-Pull)
-
-**Definicion**: El consumidor **descarga/jala** los datos desde un endpoint temporal proporcionado por el Data Plane del proveedor.
-
-**Flujo:**
-
-1. Consumer negocia contrato y solicita transferencia
-2. Provider Data Plane genera un endpoint publico temporal (EDR - Endpoint Data Reference)
-3. Consumer recibe la URL del endpoint: `http://localhost/provider-qna/public/api/public`
-4. Consumer hace **HTTP GET** al endpoint para descargar el dataset
-5. Data Plane procesa la peticion (aplica anonimizacion si corresponde) y retorna el dataset
-
-**Caracteristicas:**
-
-- ✅ Consumer controla el momento de descarga
-- ✅ Consumer puede reintentar la descarga si falla
-- ✅ Adecuado para datasets grandes (consumer puede gestionar streaming)
-- ❌ Requiere que consumer implemente logica de descarga
-- ❌ El endpoint expuesto debe ser accesible desde la red del consumer
-
-**Metodo HTTP**: `GET` (tipicamente)
-
-**Ejemplo de peticion (Postman/cURL):**
-
-```bash
-GET http://localhost/provider-qna/public/api/public
-Authorization: <auth-token-from-EDR>
-```
-
-**Usado en**: Mayoría de casos de uso, datasets bajo demanda, integraciones con herramientas de descarga.
-
-### 9.2 HTTP PUSH (Provider-Push)
-
-**Definicion**: El proveedor **envia/empuja** los datos directamente a un endpoint HTTP del consumidor.
-
-**Flujo:**
-
-1. Consumer negocia contrato y solicita transferencia, **especificando su endpoint receptor**
-2. Provider Data Plane procesa el dataset (aplica anonimizacion si corresponde)
-3. Provider hace **HTTP POST/PUT** al endpoint del consumer con el dataset
-4. Consumer recibe los datos pasivamente en su endpoint
-
-**Caracteristicas:**
-
-- ✅ Consumer no necesita implementar logica de descarga activa
-- ✅ Transferencia iniciada inmediatamente por el provider
-- ✅ Adecuado para notificaciones y entregas automaticas
-- ❌ Consumer debe exponer un endpoint HTTP accesible desde provider
-- ❌ Menos control del consumer sobre el timing de recepcion
-- ❌ Reintentos mas complejos si falla la entrega
-
-**Metodo HTTP**: `POST` o `PUT` (tipicamente)
-
-**Usado en**: Integraciones event-driven, pipelines automaticos, webhooks.
-
-### 9.3 Configuracion en EDC para cambiar de PULL a PUSH
-
-Para cambiar de PULL a PUSH, el consumer debe especificar su endpoint receptor en el **DataAddress** al solicitar la transferencia:
-
-**Transferencia PULL (actual - por defecto):**
-
-```json
-{
-  "@context": {...},
-  "@type": "TransferRequest",
-  "assetId": "asset-kanon-demo-1",
-  "contractId": "<contract-agreement-id>",
-  "dataDestination": {
-    "@type": "DataAddress",
-    "type": "HttpProxy"  // Consumer descarga desde endpoint del provider
-  },
-  "protocol": "dataspace-protocol-http",
-  "transferType": "HttpData-PULL"
-}
-```
-
-**Transferencia PUSH (consumer especifica su endpoint):**
-
-```json
-{
-  "@context": {...},
-  "@type": "TransferRequest",
-  "assetId": "asset-kanon-demo-1",
-  "contractId": "<contract-agreement-id>",
-  "dataDestination": {
-    "@type": "DataAddress",
-    "type": "HttpData",
-    "baseUrl": "http://consumer-receiver:8080/api/receive-data",  // Endpoint del consumer
-    "method": "POST",
-    "contentType": "application/octet-stream"
-  },
-  "protocol": "dataspace-protocol-http",
-  "transferType": "HttpData-PUSH"
-}
-```
-
-### 9.4 Compatibilidad de k-anonimizacion con PULL y PUSH
-
-**Buenas noticias: La implementacion actual de k-anonimizacion funciona con AMBOS modos sin modificacion de codigo.**
-
-**Razon:**
-
-- La anonimizacion se ejecuta en el **Data Plane** durante la lectura del dataset (`KanonimizationHttpDataSource.openPartStream()`)
-- El modo PULL/PUSH solo afecta **como se entrega** el resultado al consumer, no el procesamiento interno
-- En PULL: DP retorna el stream anonimizado como respuesta HTTP al consumer
-- En PUSH: DP envia el stream anonimizado via HTTP POST al endpoint del consumer
-
-**No se requieren cambios de codigo en las extensiones k-anonimization para soportar PUSH.**
-
-### 9.5 Prueba de transferencia PUSH en Postman
-
-Para probar PUSH, el consumer necesita:
-
-1. **Exponer un endpoint receptor** (servidor HTTP simple que acepte POST):
-
-```bash
-# Ejemplo con Python
-python3 -m http.server 8080
-
-# O con Node.js (express)
-# Crear servidor que escuche POST en /api/receive-data
-```
-
-2. **Modificar TransferRequest en Postman** para especificar `dataDestination` con el endpoint del consumer.
-
-3. **Verificar logs del Data Plane** para confirmar que el POST al endpoint del consumer fue exitoso.
-
-### 9.6 Diferencias clave (resumen)
-
-| Aspecto                 | PULL                             | PUSH                                  |
-| ----------------------- | -------------------------------- | ------------------------------------- |
-| Iniciador de descarga   | Consumer                         | Provider                              |
-| Metodo HTTP             | GET (consumer → provider)        | POST/PUT (provider → consumer)        |
-| Endpoint expuesto       | Provider Data Plane              | Consumer                              |
-| Control de timing       | Consumer decide cuando descargar | Provider envia inmediatamente         |
-| Reintentos              | Consumer puede reintentar GET    | Provider debe implementar retry logic |
-| Implementacion consumer | Debe hacer HTTP GET activamente  | Debe exponer HTTP endpoint pasivo     |
-| Uso en k-anon PoC       | ✅ Funciona (modo por defecto)   | ✅ Funciona (sin cambios de codigo)   |
-
-### 9.7 Recomendacion para esta PoC
-
-**Continuar usando HTTP PULL** por las siguientes razones:
-
-- ✅ Mas simple para pruebas (no requiere exponer endpoint del consumer)
-- ✅ Mejor para datasets grandes con posible retry
-- ✅ Modo por defecto en EDC
-- ✅ Facilita debugging (consumer decide cuando descargar)
-
-HTTP PUSH es mas util en escenarios productivos con pipelines automatizados o integraciones event-driven.
-
----
-
-## Anexo A - Archivos clave implementados
-
-### Control Plane
-
-- extensions/k-anonimization-control-plane/src/main/java/org/eclipse/edc/demo/kanon/controlplane/KanonimizationControlPlaneExtension.java
-- extensions/k-anonimization-control-plane/src/main/java/org/eclipse/edc/demo/kanon/controlplane/KanonimizationPolicyFunction.java
-- extensions/k-anonimization-control-plane/src/main/java/org/eclipse/edc/demo/kanon/controlplane/KanonimizationDataFlowPropertiesProvider.java
-- extensions/k-anonimization-control-plane/src/main/java/org/eclipse/edc/demo/kanon/controlplane/KanonimizationPropagationStore.java
-- extensions/k-anonimization-control-plane/src/main/java/org/eclipse/edc/demo/kanon/controlplane/KanonimizationAssetMetadataReader.java
-
-### Data Plane
-
-- extensions/k-anonimization-data-plane/src/main/java/org/eclipse/edc/demo/kanon/dataplane/KanonimizationDataPlaneExtension.java
-- extensions/k-anonimization-data-plane/src/main/java/org/eclipse/edc/demo/kanon/dataplane/KanonimizationHttpDataSourceFactory.java
-- extensions/k-anonimization-data-plane/src/main/java/org/eclipse/edc/demo/kanon/dataplane/KanonimizationHttpDataSource.java
-- extensions/k-anonimization-data-plane/src/main/java/org/eclipse/edc/demo/kanon/dataplane/KanonimizationServiceClient.java
-
-### Wiring y entorno
-
-- settings.gradle.kts
-- launchers/controlplane/build.gradle.kts
-- launchers/dataplane/build.gradle.kts
-- deployment/assets/env/provider_connector_qna.env
-- deployment/assets/env/provider_connector_manufacturing.env
+- que clases Java intervienen,
+- que hace cada metodo,
+- como se comunica exactamente CP -> DP,
+- como se usa `kanon.enabled`,
+- y donde se ejecuta la llamada al servicio externo.

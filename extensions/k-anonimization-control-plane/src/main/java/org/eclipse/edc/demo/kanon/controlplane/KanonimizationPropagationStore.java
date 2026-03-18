@@ -51,8 +51,8 @@ public class KanonimizationPropagationStore {
      * Señal de anonimizacion que viaja de CP a DP.
 
      * @param assetId ID del asset a anonimizar
-     * @param policyConfigUrl URL de configuracion de politica de anonimizacion
-     * @param enabled flag booleano de activacion (siempre true cuando existe la señal)
+     * @param policyConfigUrl URL de configuracion de politica de anonimizacion, opcional para el arranque
+     * @param enabled flag booleano de activacion derivado de la policy de contrato
      */
     public record KanonimizationSignal(String assetId, String policyConfigUrl, boolean enabled) {}
 }

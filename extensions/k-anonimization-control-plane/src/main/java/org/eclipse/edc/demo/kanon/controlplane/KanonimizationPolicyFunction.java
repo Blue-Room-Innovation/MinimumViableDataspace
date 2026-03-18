@@ -22,9 +22,9 @@ import org.eclipse.edc.spi.monitor.Monitor;
  * Flujo:
  * 1. Verifica que el operador sea EQ (equals)
  * 2. Si KAnonymization != true, permite transferencia sin anonimizacion
- * 3. Si KAnonymization == true, busca el asset y su policyConfigUrl
- * 4. Si falta policyConfigUrl, RECHAZA la transferencia (fail-fast)
- * 5. Si todo es valido, almacena señal para propagacion a Data Plane
+ * 3. Si KAnonymization == true, marca la transferencia para anonimizacion en Data Plane
+ * 4. Intenta enriquecer la señal con assetId y policyConfigUrl cuando estan disponibles
+ * 5. Data Plane decide la ejecucion final usando kanon.enabled como senal primaria
  */
 public class KanonimizationPolicyFunction implements AtomicConstraintRuleFunction<Permission, TransferProcessPolicyContext> {
 
@@ -58,35 +58,33 @@ public class KanonimizationPolicyFunction implements AtomicConstraintRuleFunctio
             return true;
         }
         
-        // 3. Obtiene el assetId desde el contexto de transferencia
+        // 3. Obtiene el assetId desde el contexto de transferencia para enriquecer la señal
         var assetId = KanonimizationPolicyContextHelper.assetIdFrom(context).orElse(null);
+        String policyConfigUrl = null;
+
         if (assetId == null) {
             monitor.warning("[K-ANON] Cannot resolve assetId from ContractAgreement");
-            return true;
+        } else {
+            // 4. Busca el asset en el indice para obtener parametros tecnicos adicionales
+            var asset = assetResolver.resolve(assetId).orElse(null);
+            if (asset == null) {
+                monitor.warning("[K-ANON] asset=%s not found in AssetIndex".formatted(assetId));
+            } else {
+                // 5. Lee la URL de configuracion de politica de anonimizacion desde metadatos del asset
+                policyConfigUrl = metadataReader.readPolicyConfigUrl(asset);
+            }
         }
-        
-        // 4. Busca el asset en el indice
-        var asset = assetResolver.resolve(assetId).orElse(null);
-        if (asset == null) {
-            monitor.warning("[K-ANON] asset=%s not found in AssetIndex".formatted(assetId));
-            return true;
-        }
-
-        // 5. Lee la URL de configuracion de politica de anonimizacion desde metadatos del asset
-        var policyConfigUrl = metadataReader.readPolicyConfigUrl(asset);
-
-        // 6. VALIDACION CRITICA: Si se requiere anonimizacion pero falta policyConfigUrl, RECHAZA la transferencia
-        if (policyConfigUrl == null || policyConfigUrl.isBlank()) {
-            var errorMsg = "[K-ANON] asset=%s requires anonymization but kanon.policyConfigUrl is missing. Transfer denied.".formatted(assetId);
-            monitor.severe(errorMsg);
-            context.reportProblem(errorMsg);
-            return false; // Fail-fast: rechaza transferencia con configuracion incompleta
-        }
-
-        // 7. Configuracion valida: registra deteccion y prepara señal para Data Plane
-        monitor.info("[K-ANON] detection=true asset=%s policyConfigUrl=%s".formatted(assetId, policyConfigUrl));
 
         var agreementId = context.contractAgreement() != null ? context.contractAgreement().getId() : null;
+        if (agreementId == null || agreementId.isBlank()) {
+            monitor.warning("[K-ANON] detection=true but cannot store signal because agreementId is missing");
+            return true;
+        }
+
+        if (policyConfigUrl == null || policyConfigUrl.isBlank()) {
+            monitor.warning("[K-ANON] detection=true asset=%s but kanon.policyConfigUrl is missing. DP will receive enabled=true and fail if anonymization is executed without configuration.".formatted(assetId));
+        }
+
         propagationStore.put(agreementId, new KanonimizationPropagationStore.KanonimizationSignal(assetId, policyConfigUrl, true));
 
         monitor.info("[K-ANON] signal stored for DP - agreementId=%s assetId=%s".formatted(agreementId, assetId));

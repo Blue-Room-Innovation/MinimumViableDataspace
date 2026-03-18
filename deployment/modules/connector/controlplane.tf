@@ -148,6 +148,7 @@ resource "kubernetes_config_map" "connector-config" {
     EDC_PARTICIPANT_ID                         = var.participantId
     EDC_IAM_ISSUER_ID                          = var.participantId
     EDC_IAM_DID_WEB_USE_HTTPS                  = false
+    EDC_HOSTNAME                               = local.controlplane-service-name
     WEB_HTTP_PORT                              = var.ports.web
     WEB_HTTP_PATH                              = "/api"
     WEB_HTTP_MANAGEMENT_PORT                   = var.ports.management

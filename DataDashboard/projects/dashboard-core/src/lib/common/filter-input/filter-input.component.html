@@ -1,0 +1,24 @@
+<!--
+    Copyright (c) 2025 Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V.
+
+    This program and the accompanying materials are made available under the
+    terms of the Apache License, Version 2.0 which is available at
+    https://www.apache.org/licenses/LICENSE-2.0
+
+    SPDX-License-Identifier: Apache-2.0
+
+    Contributors:
+         Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. - initial API and implementation
+-->
+
+<div class="rounded-2xl shadow-xl">
+  <label
+    #filterInput
+    class="input input-lg text-base focus:outline-hidden focus-within:outline-hidden border-base-300 focus-within:border-primary flex w-full items-center gap-2 rounded-2xl bg-base-300"
+  >
+    <input type="text" class="grow" [placeholder]="placeholder ?? 'Filter...'" (input)="onChange($event)" />
+    @for (key of focusShortcut; track key) {
+      <kbd class="kbd">{{ key }}</kbd>
+    }
+  </label>
+</div>

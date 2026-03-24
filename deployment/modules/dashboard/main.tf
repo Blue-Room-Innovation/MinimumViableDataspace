@@ -16,7 +16,7 @@ locals {
       defaultUrl               = "http://127.0.0.1/provider-qna/health/api"
       protocolUrl              = "http://127.0.0.1/provider-qna/cp/api/dsp"
       apiToken                 = var.api_token
-      federatedCatalogEnabled  = true
+      federatedCatalogEnabled  = false
       federatedCatalogUrl      = "http://127.0.0.1/provider-qna/fc/api/catalog"
       did                      = var.provider_did
     },
@@ -26,7 +26,7 @@ locals {
       defaultUrl               = "http://127.0.0.1/provider-manufacturing/health/api"
       protocolUrl              = "http://127.0.0.1/provider-manufacturing/cp/api/dsp"
       apiToken                 = var.api_token
-      federatedCatalogEnabled  = true
+      federatedCatalogEnabled  = false
       federatedCatalogUrl      = "http://127.0.0.1/provider-manufacturing/fc/api/catalog"
       did                      = var.provider_did
     }

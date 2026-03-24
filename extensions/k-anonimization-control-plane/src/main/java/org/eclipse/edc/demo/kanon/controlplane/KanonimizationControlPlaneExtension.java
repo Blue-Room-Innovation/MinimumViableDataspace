@@ -29,6 +29,7 @@ import static org.eclipse.edc.policy.model.OdrlNamespace.ODRL_SCHEMA;
 public class KanonimizationControlPlaneExtension implements ServiceExtension {
 
     public static final String NAME = "K-Anonimization Control Plane Extension";
+    private static final String EDC_NAMESPACE = "https://w3id.org/edc/v0.0.1/ns/";
 
     @Inject
     private PolicyEngine policyEngine;
@@ -59,11 +60,18 @@ public class KanonimizationControlPlaneExtension implements ServiceExtension {
         ruleBindingRegistry.bind("use", TransferProcessPolicyContext.TRANSFER_SCOPE);
         ruleBindingRegistry.bind(ODRL_SCHEMA + "use", TransferProcessPolicyContext.TRANSFER_SCOPE);
         ruleBindingRegistry.bind(KanonimizationPolicyFunction.K_ANONYMIZATION_CONSTRAINT_KEY, TransferProcessPolicyContext.TRANSFER_SCOPE);
+        ruleBindingRegistry.bind(EDC_NAMESPACE + KanonimizationPolicyFunction.K_ANONYMIZATION_CONSTRAINT_KEY, TransferProcessPolicyContext.TRANSFER_SCOPE);
 
         policyEngine.registerFunction(
                 TransferProcessPolicyContext.class,
                 Permission.class,
                 KanonimizationPolicyFunction.K_ANONYMIZATION_CONSTRAINT_KEY,
+                function
+        );
+        policyEngine.registerFunction(
+                TransferProcessPolicyContext.class,
+                Permission.class,
+                EDC_NAMESPACE + KanonimizationPolicyFunction.K_ANONYMIZATION_CONSTRAINT_KEY,
                 function
         );
 

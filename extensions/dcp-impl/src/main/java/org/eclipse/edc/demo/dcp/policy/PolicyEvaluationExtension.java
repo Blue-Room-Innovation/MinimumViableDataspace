@@ -32,6 +32,8 @@ import static org.eclipse.edc.policy.model.OdrlNamespace.ODRL_SCHEMA;
 
 public class PolicyEvaluationExtension implements ServiceExtension {
 
+    private static final String EDC_NAMESPACE = "https://w3id.org/edc/v0.0.1/ns/";
+
     @Inject
     private PolicyEngine policyEngine;
 
@@ -60,16 +62,23 @@ public class PolicyEvaluationExtension implements ServiceExtension {
     private <C extends PolicyContext> void bindPermissionFunction(AtomicConstraintRuleFunction<Permission, C> function, Class<C> contextClass, String scope, String constraintType) {
         ruleBindingRegistry.bind("use", scope);
         ruleBindingRegistry.bind(ODRL_SCHEMA + "use", scope);
-        ruleBindingRegistry.bind(constraintType, scope);
-
-        policyEngine.registerFunction(contextClass, Permission.class, constraintType, function);
+        bindConstraintAliases(scope, constraintType, alias -> policyEngine.registerFunction(contextClass, Permission.class, alias, function));
     }
 
     private <C extends PolicyContext> void bindDutyFunction(AtomicConstraintRuleFunction<Duty, C> function, Class<C> contextClass, String scope, String constraintType) {
         ruleBindingRegistry.bind("use", scope);
         ruleBindingRegistry.bind(ODRL_SCHEMA + "use", scope);
-        ruleBindingRegistry.bind(constraintType, scope);
+        bindConstraintAliases(scope, constraintType, alias -> policyEngine.registerFunction(contextClass, Duty.class, alias, function));
+    }
 
-        policyEngine.registerFunction(contextClass, Duty.class, constraintType, function);
+    private void bindConstraintAliases(String scope, String constraintType, java.util.function.Consumer<String> registrar) {
+        ruleBindingRegistry.bind(constraintType, scope);
+        registrar.accept(constraintType);
+
+        if (!constraintType.startsWith("http://") && !constraintType.startsWith("https://")) {
+            var namespacedConstraint = EDC_NAMESPACE + constraintType;
+            ruleBindingRegistry.bind(namespacedConstraint, scope);
+            registrar.accept(namespacedConstraint);
+        }
     }
 }

@@ -26,6 +26,7 @@ import { firstValueFrom } from 'rxjs';
 })
 export class CatalogRequestFormComponent implements OnInit {
   readonly stateService = inject(DashboardStateService);
+  private readonly protocol = 'dataspace-protocol-http';
 
   @Output() request = new EventEmitter<CatalogRequest>();
 
@@ -49,7 +50,8 @@ export class CatalogRequestFormComponent implements OnInit {
     const catalogRequest: CatalogRequest = {
       counterPartyAddress: this.requestForm.value.counterPartyAddress,
       counterPartyId: this.requestForm.value.counterPartyId,
-    };
+      protocol: this.protocol,
+    } as CatalogRequest & { protocol: string };
     this.request.emit(catalogRequest);
   }
 }

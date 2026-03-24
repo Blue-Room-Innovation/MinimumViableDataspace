@@ -38,7 +38,7 @@ export class CatalogRequestComponent implements OnDestroy {
   @Input() federatedCatalog = false;
   @Output() catalogRequested = new EventEmitter<CatalogRequest>();
 
-  protocol = 'dataspace-protocol-http:2025-1';
+  protocol = 'dataspace-protocol-http';
   selectedConnector?: EdcConfig;
 
   constructor() {
@@ -51,7 +51,8 @@ export class CatalogRequestComponent implements OnDestroy {
       const request: CatalogRequest = {
         counterPartyId: this.selectedConnector.did ?? '',
         counterPartyAddress: this.selectedConnector.protocolUrl,
-      };
+        protocol: this.protocol,
+      } as CatalogRequest & { protocol: string };
       if (this.selectedConnector.did) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (request as any).counterPartyId = this.selectedConnector.did;

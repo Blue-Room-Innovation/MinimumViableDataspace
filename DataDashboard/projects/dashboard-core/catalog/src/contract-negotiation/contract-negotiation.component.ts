@@ -64,8 +64,12 @@ export class ContractNegotiationComponent implements OnChanges {
       const request: ContractNegotiationRequest = {
         counterPartyId: this.catalogDataset.participantId,
         counterPartyAddress: this.catalogDataset.originator,
+        protocol: 'dataspace-protocol-http',
         policy: policy,
-      };
+        callbackAddresses: [],
+      } as ContractNegotiationRequest & { protocol: string };
+
+      console.log('request on start Negotiation: ', request);
 
       this.catalogService
         .initiateNegotiation(request)

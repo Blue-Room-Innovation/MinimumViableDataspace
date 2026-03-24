@@ -112,10 +112,13 @@ export class TransferCreateComponent implements OnChanges, OnDestroy {
         assetId: this.agreement.assetId,
         contractId: this.agreement.id,
         counterPartyAddress: this.negotiation.counterPartyAddress,
-      };
+        protocol: 'dataspace-protocol-http',
+      } as TransferProcessInput & { protocol?: string };
+      (transferInput as TransferProcessInput & { connectorId?: string }).connectorId = this.agreement.providerId;
       if (this.isPushTransfer) {
         transferInput.dataDestination = this.dataAddress;
       }
+      console.log('request on start transfer: ', transferInput);
       const id = await this.transferService.initiateTransferProcess(transferInput);
       if (id) {
         this.transferId.emit(id);

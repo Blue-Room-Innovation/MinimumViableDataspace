@@ -29,3 +29,7 @@ output "provider-jdbc-url" {
     provider-manufacturing = "jdbc:postgresql://${module.provider-postgres.database-url}/provider_manufacturing"
   }
 }
+
+output "dashboard-url" {
+  value = module.dashboard.dashboard_url
+}

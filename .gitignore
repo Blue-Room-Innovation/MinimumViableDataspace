@@ -15,3 +15,9 @@ deployment/assets/credentials/k8s/provider/*-credential.json
 
 deployment/assets/credentials/local/consumer/*-credential.json
 deployment/assets/credentials/local/provider/*-credential.json
+
+DataDashboard/cypress/screenshots/
+DataDashboard/cypress/videos/
+DataDashboard/cypress/downloads/
+DataDashboard/.cypress_cache/
+DataDashboard/.angular/cache

@@ -73,12 +73,28 @@ if [[ "$build_choice" =~ ^[Yy]$ ]]; then
     gradle build
     gradle -Ppersistence=true dockerize
   fi
+  if [ -f "./DataDashboard/Dockerfile" ]; then
+    echo "🖥️  Construyendo imagen dashboard:latest desde ./DataDashboard ..."
+    docker build -t dashboard:latest ./DataDashboard
+  else
+    echo "⚠️ No se encontró ./DataDashboard/Dockerfile; se omite build de dashboard."
+  fi
   echo "✅ Build y dockerize completados."
 else
   echo "⚡ Saltando el build — se usarán imágenes locales existentes."
   echo "   Si no existen, el despliegue fallará. Ejecuta el build si es tu primera vez."
 fi
 echo
+
+if ! docker image inspect dashboard:latest >/dev/null 2>&1; then
+  if [ -f "./DataDashboard/Dockerfile" ]; then
+    echo "🖥️  No existe dashboard:latest en local; construyendo imagen para habilitar la UI..."
+    docker build -t dashboard:latest ./DataDashboard
+  else
+    echo "⚠️ No se encontró ./DataDashboard/Dockerfile y no existe dashboard:latest."
+    echo "   La UI no podrá desplegarse hasta construir la imagen manualmente."
+  fi
+fi
 
 # ---------- 3) Crear clúster Kind y cargar imágenes (README 5.2) ----------
 if kind get clusters | grep -q "^${CLUSTER_NAME}$"; then
@@ -93,7 +109,7 @@ echo
 
 # Cargar imágenes locales en Kind (README 5.2)
 echo "🐳 Cargando imágenes locales en Kind..."
-LOAD_LIST=(controlplane:latest dataplane:latest identity-hub:latest catalog-server:latest issuerservice:latest)
+LOAD_LIST=(nginx:latest postgres:16.3-alpine3.20 eclipse-temurin:23.0.2_7-jre-alpine controlplane:latest dataplane:latest identity-hub:latest catalog-server:latest issuerservice:latest dashboard:latest)
 for img in "${LOAD_LIST[@]}"; do
   if docker image inspect "$img" >/dev/null 2>&1; then
     echo "   ▶ kind load docker-image $img -n ${CLUSTER_NAME}"
@@ -141,6 +157,7 @@ DEPLOYMENTS=(
   consumer-controlplane
   consumer-dataplane
   provider-catalog-server-controlplane
+  mvd-dashboard
 )
 
 for dep in "${DEPLOYMENTS[@]}"; do
@@ -203,5 +220,6 @@ echo "🌱 Seed script:       ${SEED_SCRIPT}"
 echo "----------------------------------------------------"
 echo "🔎 Pods (mvd):        kubectl get pods -n ${NAMESPACE}"
 echo "🧪 Probar APIs:       http://127.0.0.1/<provider|consumer|issuer>/..."
+echo "🖥️  Dashboard UI:     http://127.0.0.1/dashboard/"
 echo "💡 Si algo falla:     kubectl describe pod <pod> -n ${NAMESPACE}; kubectl logs <pod> -n ${NAMESPACE}"
 echo "===================================================="

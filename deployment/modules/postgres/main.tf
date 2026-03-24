@@ -37,6 +37,7 @@ resource "kubernetes_deployment" "postgres" {
         container {
           image = local.pg-image
           name  = local.app-name
+          image_pull_policy = "IfNotPresent"
 
           env_from {
             config_map_ref {

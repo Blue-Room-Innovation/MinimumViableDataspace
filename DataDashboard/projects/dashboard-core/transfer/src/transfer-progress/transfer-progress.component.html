@@ -63,4 +63,10 @@
       (errorEvent)="errorMsg = $event"
     ></lib-transfer-pull-download>
   }
+  @if (this.type === 'Push' && !this.polling) {
+    <button class="btn btn-primary mt-6" (click)="modalAndAlertService.closeModal()">
+      <i class="material-symbols-rounded">check_circle</i>
+      Done
+    </button>
+  }
 </div>

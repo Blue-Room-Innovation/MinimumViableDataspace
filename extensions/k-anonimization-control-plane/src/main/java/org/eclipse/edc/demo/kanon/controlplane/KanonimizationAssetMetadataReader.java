@@ -10,12 +10,16 @@
 
 package org.eclipse.edc.demo.kanon.controlplane;
 
+import org.eclipse.edc.spi.monitor.Monitor;
+
 import java.lang.reflect.Method;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Lee metadatos del asset para obtener la URL de configuracion de politica de anonimizacion.
- * Busca en properties, privateProperties y dataAddress del asset.
+ * Solo busca en privateProperties: la URL de config de anonimizacion es informacion sensible
+ * que no debe estar expuesta en propiedades publicas del asset.
  */
 @SuppressWarnings("unchecked")
 public class KanonimizationAssetMetadataReader {
@@ -27,24 +31,37 @@ public class KanonimizationAssetMetadataReader {
         EDC_NS + "kanon.policyConfigUrl"
     };
 
+    private final Monitor monitor;
+
+    public KanonimizationAssetMetadataReader(Monitor monitor) {
+        this.monitor = monitor;
+    }
+
     /**
      * Extrae la URL de configuracion de politica de anonimizacion del asset.
+     * Busca SOLO en privateProperties para proteger la URL de configuracion.
      *
      * @param asset objeto Asset de EDC
      * @return URL de politica de anonimizacion (puede ser null)
      */
     public String readPolicyConfigUrl(Object asset) {
-        var properties = asMap(invokeNoArg(asset, "getProperties"));
         var privateProperties = asMap(invokeNoArg(asset, "getPrivateProperties"));
-        var dataAddress = invokeNoArg(asset, "getDataAddress");
-        var dataAddressProperties = asMap(invokeNoArg(dataAddress, "getProperties"));
 
-        // Busca en todos los posibles lugares donde puede estar la URL de politica
-        return firstNonBlank(
-                firstMatching(properties, POLICY_URL_KEYS),
-                firstMatching(privateProperties, POLICY_URL_KEYS),
-                firstMatching(dataAddressProperties, POLICY_URL_KEYS)
-        );
+        monitor.debug("[K-ANON][MetadataReader] privateProperties keys: [" + privateProperties.keySet().stream().sorted().collect(Collectors.joining(", ")) + "]");
+
+        var url = firstMatching(privateProperties, POLICY_URL_KEYS);
+
+        if (url == null || url.isBlank()) {
+            monitor.warning("[K-ANON][MetadataReader] kanon.policyConfigUrl NOT FOUND in privateProperties." + 
+                    " Searched keys: [kanon.policyConfigUrl, edc:kanon.policyConfigUrl, " +
+                    EDC_NS + "kanon.policyConfigUrl]" + " Available privateProperties keys: [" +
+                    privateProperties.keySet().stream().sorted().collect(Collectors.joining(", ")) + "]"  +
+                    " Make sure the asset defines kanon.policyConfigUrl inside 'privateProperties'.");
+        } else {
+            monitor.info("[K-ANON][MetadataReader] Found kanon.policyConfigUrl=" + url);
+        }
+
+        return url;
     }
 
     private Object invokeNoArg(Object target, String methodName) {
@@ -69,20 +86,6 @@ public class KanonimizationAssetMetadataReader {
 
     private String asString(Object value) {
         return value != null ? value.toString() : null;
-    }
-
-    private String firstNonBlank(String first, String second) {
-        if (first != null && !first.isBlank()) {
-            return first;
-        }
-        if (second != null && !second.isBlank()) {
-            return second;
-        }
-        return null;
-    }
-
-    private String firstNonBlank(String first, String second, String third) {
-        return firstNonBlank(firstNonBlank(first, second), third);
     }
 
     // Busca la primera clave que retorne un valor no vacio

@@ -28,6 +28,16 @@ import java.util.Map;
  */
 public class KanonimizationDataFlowPropertiesProvider implements DataFlowPropertiesProvider {
 
+    private static final String EDC_NAMESPACE = "https://w3id.org/edc/v0.0.1/ns/";
+    private static final String KANON_ENABLED = "kanon.enabled";
+    private static final String KANON_ENABLED_NS = EDC_NAMESPACE + KANON_ENABLED;
+    private static final String KANON_REQUIRED = "kanon.anonymization.required";
+    private static final String KANON_REQUIRED_NS = EDC_NAMESPACE + KANON_REQUIRED;
+    private static final String KANON_ASSET_ID = "kanon.assetId";
+    private static final String KANON_ASSET_ID_NS = EDC_NAMESPACE + KANON_ASSET_ID;
+    private static final String KANON_POLICY_CONFIG_URL = "kanon.policyConfigUrl";
+    private static final String KANON_POLICY_CONFIG_URL_NS = EDC_NAMESPACE + KANON_POLICY_CONFIG_URL;
+
     private final KanonimizationPropagationStore propagationStore;
     private final Monitor monitor;
 
@@ -57,15 +67,22 @@ public class KanonimizationDataFlowPropertiesProvider implements DataFlowPropert
         }
 
         var properties = new HashMap<String, String>();
-        properties.put("kanon.enabled", Boolean.toString(signal.enabled()));
+        var enabledValue = Boolean.toString(signal.enabled());
+        properties.put(KANON_ENABLED, enabledValue);
+        properties.put(KANON_ENABLED_NS, enabledValue);
+        properties.put(KANON_REQUIRED, enabledValue);
+        properties.put(KANON_REQUIRED_NS, enabledValue);
         if (signal.assetId() != null && !signal.assetId().isBlank()) {
-            properties.put("kanon.assetId", signal.assetId());
+            properties.put(KANON_ASSET_ID, signal.assetId());
+            properties.put(KANON_ASSET_ID_NS, signal.assetId());
         }
         if (signal.policyConfigUrl() != null && !signal.policyConfigUrl().isBlank()) {
-            properties.put("kanon.policyConfigUrl", signal.policyConfigUrl());
+            properties.put(KANON_POLICY_CONFIG_URL, signal.policyConfigUrl());
+            properties.put(KANON_POLICY_CONFIG_URL_NS, signal.policyConfigUrl());
         }
 
-        monitor.info("[K-ANON] processId=%s agreementId=%s propagated to DP properties: kanon.enabled=%s kanon.assetId=%s".formatted(processId, agreementId, signal.enabled(), signal.assetId()));
+        monitor.info("[K-ANON][CP->DP] processId=%s agreementId=%s propagated properties: %s".formatted(
+                processId, agreementId, properties));
 
         return StatusResult.success(properties);
     }

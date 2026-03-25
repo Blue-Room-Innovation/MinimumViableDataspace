@@ -54,7 +54,7 @@ public class KanonimizationControlPlaneExtension implements ServiceExtension {
     public void initialize(ServiceExtensionContext context) {
         propagationStore = new KanonimizationPropagationStore();
         var assetResolver = new KanonimizationAssetResolver(assetIndex);
-        var metadataReader = new KanonimizationAssetMetadataReader();
+        var metadataReader = new KanonimizationAssetMetadataReader(monitor.withPrefix("K-ANON"));
         var function = new KanonimizationPolicyFunction(assetResolver, metadataReader, propagationStore, monitor.withPrefix("K-ANON"));
 
         ruleBindingRegistry.bind("use", TransferProcessPolicyContext.TRANSFER_SCOPE);

@@ -82,12 +82,15 @@ public class KanonimizationPolicyFunction implements AtomicConstraintRuleFunctio
         }
 
         if (policyConfigUrl == null || policyConfigUrl.isBlank()) {
-            monitor.warning("[K-ANON] detection=true asset=%s but kanon.policyConfigUrl is missing. DP will receive enabled=true and fail if anonymization is executed without configuration.".formatted(assetId));
+            var msg = "[K-ANON] KAnonymization=true required for assetId=%s but kanon.policyConfigUrl is missing in privateProperties. Transfer BLOCKED.".formatted(assetId);
+            monitor.severe(msg);
+            context.reportProblem(msg);
+            return false;
         }
 
         propagationStore.put(agreementId, new KanonimizationPropagationStore.KanonimizationSignal(assetId, policyConfigUrl, true));
 
-        monitor.info("[K-ANON] signal stored for DP - agreementId=%s assetId=%s".formatted(agreementId, assetId));
+        monitor.info("[K-ANON] signal stored for DP - agreementId=%s assetId=%s policyConfigUrl=%s".formatted(agreementId, assetId, policyConfigUrl));
         return true;
     }
 

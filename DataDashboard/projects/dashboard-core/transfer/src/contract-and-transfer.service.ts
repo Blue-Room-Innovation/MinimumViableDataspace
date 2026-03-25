@@ -13,7 +13,7 @@
  */
 
 import { Injectable, inject } from '@angular/core';
-import { EdcClientService } from '@eclipse-edc/dashboard-core';
+import { DashboardStateService, EdcClientService } from '@eclipse-edc/dashboard-core';
 import {
   compact,
   ContractAgreement,
@@ -26,8 +26,19 @@ import {
   TransferProcessInput,
   TransferProcessState,
 } from '@think-it-labs/edc-connector-client';
-import { Observable } from 'rxjs';
-import { HttpClient, HttpEvent } from '@angular/common/http';
+import { firstValueFrom, Observable } from 'rxjs';
+import { HttpClient, HttpEvent, HttpHeaders } from '@angular/common/http';
+
+type LegacyTransferProcessRequest = {
+  '@context': string[];
+  assetId?: string;
+  counterPartyAddress: string;
+  connectorId: string;
+  contractId: string;
+  dataDestination?: unknown;
+  protocol: string;
+  transferType: string;
+};
 
 /**
  * Service that provides functionalities for managing contract negotiations, agreements, and data transfers.
@@ -38,6 +49,7 @@ import { HttpClient, HttpEvent } from '@angular/common/http';
 })
 export class ContractAndTransferService {
   private readonly edc = inject(EdcClientService);
+  private readonly stateService = inject(DashboardStateService);
   private readonly http = inject(HttpClient);
 
   /**
@@ -172,7 +184,41 @@ export class ContractAndTransferService {
    * @return {Promise<IdResponse>} A promise resolving to an object containing the ID of the initiated transfer process.
    */
   public async initiateTransferProcess(transferInput: TransferProcessInput): Promise<IdResponse> {
-    return (await this.edc.getClient()).management.transferProcesses.initiate(transferInput);
+    const edcConfig = await firstValueFrom(this.stateService.currentEdcConfig$);
+    if (!edcConfig) {
+      throw new Error('No current EDC configuration found.');
+    }
+
+    const request = this.toLegacyTransferProcessRequest(transferInput);
+    const headers = this.createManagementHeaders(edcConfig.apiToken);
+
+    return firstValueFrom(
+      this.http.post<IdResponse>(`${edcConfig.managementUrl}/v3/transferprocesses`, request, { headers }),
+    );
+  }
+
+  private toLegacyTransferProcessRequest(transferInput: TransferProcessInput): LegacyTransferProcessRequest {
+    const connectorId =
+      (transferInput as TransferProcessInput & { connectorId?: string }).connectorId ?? transferInput.counterPartyId;
+
+    return {
+      '@context': ['https://w3id.org/edc/connector/management/v0.0.1'],
+      assetId: transferInput.assetId,
+      counterPartyAddress: transferInput.counterPartyAddress,
+      connectorId,
+      contractId: transferInput.contractId,
+      dataDestination: transferInput.dataDestination,
+      protocol: (transferInput as TransferProcessInput & { protocol?: string }).protocol ?? 'dataspace-protocol-http',
+      transferType: transferInput.transferType,
+    };
+  }
+
+  private createManagementHeaders(apiToken?: string): HttpHeaders {
+    let headers = new HttpHeaders({ 'Content-Type': 'application/json' });
+    if (apiToken) {
+      headers = headers.set('X-Api-Key', apiToken);
+    }
+    return headers;
   }
 
   /**

@@ -24,6 +24,7 @@ import {
 import { ContractAndTransferService } from '../contract-and-transfer.service';
 import { NgClass } from '@angular/common';
 import { TransferPullDownloadComponent } from '../transfer-pull-download/transfer-pull-download.component';
+import { ModalAndAlertService } from '@eclipse-edc/dashboard-core';
 
 @Component({
   selector: 'lib-transfer-progress',
@@ -33,6 +34,7 @@ import { TransferPullDownloadComponent } from '../transfer-pull-download/transfe
 })
 export class TransferProgressComponent implements OnChanges, OnDestroy {
   private readonly transferService = inject(ContractAndTransferService);
+  readonly modalAndAlertService = inject(ModalAndAlertService);
 
   @Input() agreement!: ContractAgreement;
   @Input() negotiation!: ContractNegotiation;
@@ -123,6 +125,9 @@ export class TransferProgressComponent implements OnChanges, OnDestroy {
         this.currentState === TransferProcessStates.COMPLETED
       ) {
         this.stopStatusJob();
+        if (this.type === 'Push' && this.currentState === TransferProcessStates.COMPLETED) {
+          this.modalAndAlertService.showAlert('Push transfer completed successfully.', undefined, 'success', 6);
+        }
       }
     } catch (error) {
       console.error('Error fetching transfer process status:', error);

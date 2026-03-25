@@ -119,13 +119,36 @@ export class TransferCreateComponent implements OnChanges, OnDestroy {
         transferInput.dataDestination = this.dataAddress;
       }
       console.log('request on start transfer: ', transferInput);
-      const id = await this.transferService.initiateTransferProcess(transferInput);
-      if (id) {
-        this.transferId.emit(id);
+      try {
+        const id = await this.transferService.initiateTransferProcess(transferInput);
+        if (id) {
+          this.transferId.emit(id);
+        }
+      } catch (error) {
+        console.error('transfer start failed: ', error);
+        this.errorMsg = this.toErrorMessage(error);
       }
     } else {
       this.errorMsg = 'The negotiation for this contract agreement does not contain a counter party address.';
     }
+  }
+
+  private toErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    if (typeof error === 'object' && error !== null && 'error' in error) {
+      const backendError = (error as { error?: unknown }).error;
+      if (typeof backendError === 'string') {
+        return backendError;
+      }
+      if (typeof backendError === 'object' && backendError !== null) {
+        return JSON.stringify(backendError);
+      }
+    }
+
+    return 'Transfer initiation failed.';
   }
 
   ngOnDestroy() {

@@ -41,6 +41,15 @@ import static org.eclipse.edc.connector.dataplane.spi.pipeline.StreamResult.succ
 public class KanonimizationHttpDataSource implements DataSource {
 
     private static final Pattern FALLBACK_ANON_DATASET_PATTERN = Pattern.compile("dataset_anonymized(?:_.*)?\\..+");
+    private static final String EDC_NAMESPACE = "https://w3id.org/edc/v0.0.1/ns/";
+    private static final String KANON_ENABLED = "kanon.enabled";
+    private static final String KANON_ENABLED_NS = EDC_NAMESPACE + KANON_ENABLED;
+    private static final String KANON_REQUIRED = "kanon.anonymization.required";
+    private static final String KANON_REQUIRED_NS = EDC_NAMESPACE + KANON_REQUIRED;
+    private static final String KANON_POLICY_CONFIG_URL = "kanon.policyConfigUrl";
+    private static final String KANON_POLICY_CONFIG_URL_NS = EDC_NAMESPACE + KANON_POLICY_CONFIG_URL;
+    private static final String KANON_ASSET_ID = "kanon.assetId";
+    private static final String KANON_ASSET_ID_NS = EDC_NAMESPACE + KANON_ASSET_ID;
 
     private final KanonimizationServiceClient client;
     private final DataAddress sourceDataAddress;
@@ -78,15 +87,32 @@ public class KanonimizationHttpDataSource implements DataSource {
                 return error("[K-ANON][DP] Missing baseUrl for request " + requestId);
             }
 
+            // LOG: muestra todas las propiedades recibidas desde el CP
+            monitor.info("[K-ANON][DP] requestId=%s processId=%s agreementId=%s received flowProperties=%s"
+                    .formatted(requestId, processId, agreementId, flowProperties));
+
             // 2. Resuelve señal contractual de anonimizacion y parametros tecnicos propagados desde Control Plane
-            var enabledValue = firstNonBlank(flowProperties.get("kanon.enabled"), asString(sourceDataAddress.getProperty("kanon.enabled")));
-            var policyConfigUrl = firstNonBlank(flowProperties.get("kanon.policyConfigUrl"), asString(sourceDataAddress.getProperty("kanon.policyConfigUrl")));
-            var assetId = firstNonBlank(flowProperties.get("kanon.assetId"), flowAssetId);
+            var resolvedAgreementId = firstNonBlank(agreementId, flowProperties.get("agreementId"));
+            var enabledValue = firstNonBlank(
+                    getFirst(flowProperties, KANON_ENABLED, KANON_ENABLED_NS, KANON_REQUIRED, KANON_REQUIRED_NS),
+                    getFirst(sourceDataAddress, KANON_ENABLED, KANON_ENABLED_NS, KANON_REQUIRED, KANON_REQUIRED_NS)
+            );
+            var policyConfigUrl = firstNonBlank(
+                    getFirst(flowProperties, KANON_POLICY_CONFIG_URL, KANON_POLICY_CONFIG_URL_NS),
+                    getFirst(sourceDataAddress, KANON_POLICY_CONFIG_URL, KANON_POLICY_CONFIG_URL_NS)
+            );
+            var assetId = firstNonBlank(
+                    getFirst(flowProperties, KANON_ASSET_ID, KANON_ASSET_ID_NS, "assetId"),
+                    firstNonBlank(getFirst(sourceDataAddress, KANON_ASSET_ID, KANON_ASSET_ID_NS), flowAssetId)
+            );
             var anonymizationEnabled = resolveAnonymizationEnabled(enabledValue, policyConfigUrl);
+
+            monitor.info("[K-ANON][DP] resolved requestId=%s processId=%s agreementId=%s assetId=%s enabledValue=%s policyConfigUrl=%s"
+                    .formatted(requestId, processId, resolvedAgreementId, assetId, enabledValue, policyConfigUrl));
 
             // 3. Si NO existe señal de anonimizacion -> retorna dataset original
             if (!anonymizationEnabled) {
-                monitor.info("[K-ANON][DP] detection=false requestId=%s processId=%s agreementId=%s assetId=%s".formatted(requestId, processId, agreementId, assetId));
+                monitor.info("[K-ANON][DP] detection=false requestId=%s processId=%s agreementId=%s assetId=%s".formatted(requestId, processId, resolvedAgreementId, assetId));
                 var original = client.downloadFile(datasetUrl);
                 var mediaType = mediaTypeFromUrl(datasetUrl);
                 var part = new InMemoryPart(fileNameFromUrl(datasetUrl), original, mediaType);
@@ -94,12 +120,12 @@ public class KanonimizationHttpDataSource implements DataSource {
             }
 
             if (hasExplicitEnabledFlag(enabledValue) && (policyConfigUrl == null || policyConfigUrl.isBlank())) {
-                return error("[K-ANON][DP] requestId=%s processId=%s agreementId=%s assetId=%s anonymization enabled but kanon.policyConfigUrl is missing".formatted(requestId, processId, agreementId, assetId));
+                return error("[K-ANON][DP] requestId=%s processId=%s agreementId=%s assetId=%s anonymization enabled but kanon.policyConfigUrl is missing".formatted(requestId, processId, resolvedAgreementId, assetId));
             }
 
             // 4. Existe señal de anonimizacion -> ejecuta anonimizacion via servicio externo
             var datasetFormat = datasetFormatFromUrl(datasetUrl);
-            monitor.info("[K-ANON][DP] detection=true requestId=%s processId=%s agreementId=%s assetId=%s".formatted(requestId, processId, agreementId, assetId));
+            monitor.info("[K-ANON][DP] detection=true requestId=%s processId=%s agreementId=%s assetId=%s".formatted(requestId, processId, resolvedAgreementId, assetId));
 
             var zipBytes = client.anonymizeFromUrls(datasetUrl, policyConfigUrl, datasetFormat);
             var anonymizedFile = extractAnonymizedDataset(zipBytes, datasetFormat);
@@ -230,6 +256,26 @@ public class KanonimizationHttpDataSource implements DataSource {
 
     private boolean hasExplicitEnabledFlag(String enabledValue) {
         return enabledValue != null && !enabledValue.isBlank();
+    }
+
+    private String getFirst(Map<String, String> values, String... keys) {
+        for (var key : keys) {
+            var value = values.get(key);
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String getFirst(DataAddress dataAddress, String... keys) {
+        for (var key : keys) {
+            var value = asString(dataAddress.getProperty(key));
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 
     // Conversion segura de Object a String

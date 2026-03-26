@@ -81,9 +81,6 @@ public class KanonimizationDataFlowPropertiesProvider implements DataFlowPropert
             properties.put(KANON_POLICY_CONFIG_URL_NS, signal.policyConfigUrl());
         }
 
-        monitor.info("[K-ANON][CP->DP] processId=%s agreementId=%s propagated properties: %s".formatted(
-                processId, agreementId, properties));
-
         return StatusResult.success(properties);
     }
 }

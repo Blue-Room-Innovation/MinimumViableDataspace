@@ -118,7 +118,7 @@ export class TransferCreateComponent implements OnChanges, OnDestroy {
       if (this.isPushTransfer) {
         transferInput.dataDestination = this.dataAddress;
       }
-      console.log('request on start transfer: ', transferInput);
+
       try {
         const id = await this.transferService.initiateTransferProcess(transferInput);
         if (id) {

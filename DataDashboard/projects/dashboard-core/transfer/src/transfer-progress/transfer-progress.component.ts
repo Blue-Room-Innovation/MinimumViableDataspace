@@ -33,8 +33,10 @@ import { ModalAndAlertService } from '@eclipse-edc/dashboard-core';
   imports: [NgClass, TransferPullDownloadComponent],
 })
 export class TransferProgressComponent implements OnChanges, OnDestroy {
+  private static readonly TRACE_PREFIX = '[TransferProgressTrace]';
+
   private readonly transferService = inject(ContractAndTransferService);
-  readonly modalAndAlertService = inject(ModalAndAlertService);
+  private readonly modalAndAlertService = inject(ModalAndAlertService);
 
   @Input() agreement!: ContractAgreement;
   @Input() negotiation!: ContractNegotiation;
@@ -61,14 +63,32 @@ export class TransferProgressComponent implements OnChanges, OnDestroy {
   ];
 
   errorMsg?: string;
+  successMsg?: string;
+  debugLines: string[] = [];
 
   private statusJob?: ReturnType<typeof setInterval>;
+  private statusRequestInFlight = false;
+  private completionHandled = false;
+
+  private getTransferProcessId(): string | undefined {
+    return (
+      (this.transferId as IdResponse & { ['@id']?: string }).id ??
+      (this.transferId as IdResponse & { ['@id']?: string })['@id']
+    );
+  }
+
+  get resolvedTransferProcessId(): string | undefined {
+    return this.getTransferProcessId();
+  }
 
   async ngOnChanges() {
-    if (this.transferId.id) {
-      this.process = await compact(await this.transferService.getTransferProcess(this.transferId.id));
+    const transferProcessId = this.getTransferProcessId();
+    if (transferProcessId) {
+      this.resetProgressState();
+      this.process = await compact(await this.transferService.getTransferProcess(transferProcessId));
+
       if (this.process) {
-        this.type = this.process['transferType']?.toLowerCase().includes('push') ? 'Push' : 'Pull';
+        this.type = this.resolveTransferType(this.process);
         if (this.type === 'Pull') {
           if (this.happyPathStates.includes(TransferProcessStates.COMPLETED)) {
             this.happyPathStates.pop();
@@ -98,9 +118,24 @@ export class TransferProgressComponent implements OnChanges, OnDestroy {
   }
 
   private async pullStatus() {
+    if (this.statusRequestInFlight) {
+      return;
+    }
+
+    this.statusRequestInFlight = true;
+    const transferProcessId = this.getTransferProcessId();
+    if (!transferProcessId) {
+      this.errorMsg = 'Transfer process id is missing.';
+      this.stopStatusJob();
+      this.statusRequestInFlight = false;
+      return;
+    }
+
     try {
-      const state = await this.transferService.getTransferProcessState(this.transferId.id);
-      this.currentState = state.state as TransferProcessStates;
+      this.process = await compact(await this.transferService.getTransferProcess(transferProcessId));
+      this.currentState = this.process?.state as TransferProcessStates;
+      this.type = this.resolveTransferType(this.process);
+
       if (
         // First or new state
         (this.stateHistory.length === 0 || this.stateHistory[this.stateHistory.length - 1] !== this.currentState) &&
@@ -112,7 +147,7 @@ export class TransferProgressComponent implements OnChanges, OnDestroy {
           this.stopStatusJob();
           this.happyPath = false;
           this.stateHistory.push(this.currentState);
-          this.process = await compact(await this.transferService.getTransferProcess(this.transferId.id));
+          this.process = await compact(await this.transferService.getTransferProcess(transferProcessId));
           this.errorMsg = JSON.stringify(this.process);
         } else {
           // Include missed states due to pull mechanism
@@ -125,17 +160,102 @@ export class TransferProgressComponent implements OnChanges, OnDestroy {
         this.currentState === TransferProcessStates.COMPLETED
       ) {
         this.stopStatusJob();
-        if (this.type === 'Push' && this.currentState === TransferProcessStates.COMPLETED) {
-          this.modalAndAlertService.showAlert('Push transfer completed successfully.', undefined, 'success', 6);
-        }
+        this.handleCompletedState();
       }
     } catch (error) {
-      console.error('Error fetching transfer process status:', error);
+      console.error(`${TransferProgressComponent.TRACE_PREFIX} pullStatus:error`, error);
+    } finally {
+      this.statusRequestInFlight = false;
     }
+  }
+
+  closeModal(): void {
+    this.modalAndAlertService.closeModal();
+  }
+
+  private handleCompletedState(): void {
+    if (this.currentState !== TransferProcessStates.COMPLETED || this.type !== 'Push' || this.completionHandled) {
+      return;
+    }
+
+    this.completionHandled = true;
+    this.successMsg = 'Push transfer completed successfully.';
+    this.modalAndAlertService.showAlert(this.successMsg, undefined, 'success', 6);
+    setTimeout(() => this.closeModal(), 800);
+  }
+
+  private resolveTransferType(process?: TransferProcess): 'Push' | 'Pull' | undefined {
+    const transferType =
+      process?.['transferType'] ??
+      process?.mandatoryValue?.<string>('edc', 'transferType') ??
+      process?.['https://w3id.org/edc/v0.0.1/ns/transferType'];
+
+    if (!transferType) {
+      return this.type;
+    }
+    return transferType.toLowerCase().includes('push') ? 'Push' : 'Pull';
+  }
+
+  private resetProgressState(): void {
+    this.stopStatusJob();
+    this.polling = true;
+    this.process = undefined;
+    this.type = undefined;
+    this.currentState = undefined;
+    this.stateHistory = [];
+    this.happyPath = true;
+    this.errorMsg = undefined;
+    this.successMsg = undefined;
+    this.completionHandled = false;
+    this.statusRequestInFlight = false;
+    this.happyPathStates = [
+      TransferProcessStates.INITIAL,
+      TransferProcessStates.PROVISIONED,
+      TransferProcessStates.REQUESTED,
+      TransferProcessStates.STARTED,
+      TransferProcessStates.COMPLETED,
+    ];
   }
 
   ngOnDestroy(): void {
     this.stopStatusJob();
+  }
+
+  private describeProcess(process?: TransferProcess) {
+    if (!process) {
+      return { process: undefined };
+    }
+
+    return {
+      id: process.id,
+      state: process.state,
+      type: process.type,
+      transferType: process['transferType'],
+      edcTransferType: process['https://w3id.org/edc/v0.0.1/ns/transferType'],
+      resolvedType: this.type,
+      currentState: this.currentState,
+      stateHistory: this.stateHistory,
+      polling: this.polling,
+    };
+  }
+
+  private trace(event: string, payload?: unknown): void {
+    const message = `${TransferProgressComponent.TRACE_PREFIX} ${event}`;
+
+    const renderedPayload = this.stringifyPayload(payload);
+    this.debugLines = [...this.debugLines.slice(-11), `${message}${renderedPayload ? ` ${renderedPayload}` : ''}`];
+  }
+
+  private stringifyPayload(payload?: unknown): string {
+    if (payload === undefined) {
+      return '';
+    }
+
+    try {
+      return JSON.stringify(payload);
+    } catch {
+      return String(payload);
+    }
   }
 
   protected readonly TransferProcessStates = TransferProcessStates;

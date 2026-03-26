@@ -45,6 +45,18 @@
   @if (this.polling) {
     <span class="loading loading-bars loading-xl mt-10"></span>
   }
+  @if (debugLines.length > 0) {
+    <div class="alert alert-info alert-soft mt-6 max-w-2xl text-left">
+      <div class="w-full">
+        <h3 class="font-bold">Transfer Trace</h3>
+        <div class="mt-2 max-h-56 overflow-auto rounded bg-base-300/40 p-3 text-xs leading-5">
+          @for (line of debugLines; track $index) {
+            <div class="font-mono break-all">{{ line }}</div>
+          }
+        </div>
+      </div>
+    </div>
+  }
   @if (errorMsg) {
     <div role="alert" class="alert alert-error alert-soft mt-10 max-w-xl">
       <span class="material-symbols-rounded">error_outline</span>
@@ -54,17 +66,26 @@
       </div>
     </div>
   }
-  @if (this.type === 'Pull' && !this.polling && !errorMsg) {
+  @if (successMsg && !polling) {
+    <div role="alert" class="alert alert-success alert-soft mt-10 max-w-xl">
+      <span class="material-symbols-rounded">check_circle</span>
+      <div>
+        <h3 class="font-bold">Completed</h3>
+        <span>{{ successMsg }}</span>
+      </div>
+    </div>
+  }
+  @if (this.type === 'Pull' && !this.polling && !errorMsg && resolvedTransferProcessId) {
     <lib-transfer-pull-download
       class="w-xl"
       [agreement]="agreement"
       [negotiation]="negotiation"
-      [transferId]="transferId.id"
+      [transferId]="resolvedTransferProcessId"
       (errorEvent)="errorMsg = $event"
     ></lib-transfer-pull-download>
   }
   @if (this.type === 'Push' && !this.polling) {
-    <button class="btn btn-primary mt-6" (click)="modalAndAlertService.closeModal()">
+    <button class="btn btn-primary mt-6" (click)="closeModal()">
       <i class="material-symbols-rounded">check_circle</i>
       Done
     </button>

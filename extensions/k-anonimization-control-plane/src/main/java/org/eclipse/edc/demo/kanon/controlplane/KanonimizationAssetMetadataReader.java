@@ -14,7 +14,6 @@ import org.eclipse.edc.spi.monitor.Monitor;
 
 import java.lang.reflect.Method;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * Lee metadatos del asset para obtener la URL de configuracion de politica de anonimizacion.
@@ -47,18 +46,12 @@ public class KanonimizationAssetMetadataReader {
     public String readPolicyConfigUrl(Object asset) {
         var privateProperties = asMap(invokeNoArg(asset, "getPrivateProperties"));
 
-        monitor.debug("[K-ANON][MetadataReader] privateProperties keys: [" + privateProperties.keySet().stream().sorted().collect(Collectors.joining(", ")) + "]");
-
         var url = firstMatching(privateProperties, POLICY_URL_KEYS);
 
         if (url == null || url.isBlank()) {
             monitor.warning("[K-ANON][MetadataReader] kanon.policyConfigUrl NOT FOUND in privateProperties." + 
                     " Searched keys: [kanon.policyConfigUrl, edc:kanon.policyConfigUrl, " +
-                    EDC_NS + "kanon.policyConfigUrl]" + " Available privateProperties keys: [" +
-                    privateProperties.keySet().stream().sorted().collect(Collectors.joining(", ")) + "]"  +
-                    " Make sure the asset defines kanon.policyConfigUrl inside 'privateProperties'.");
-        } else {
-            monitor.info("[K-ANON][MetadataReader] Found kanon.policyConfigUrl=" + url);
+                    EDC_NS + "kanon.policyConfigUrl]. Make sure the asset defines kanon.policyConfigUrl inside 'privateProperties'.");
         }
 
         return url;

@@ -183,7 +183,9 @@ export class ContractAndTransferService {
    * @param {TransferProcessInput} transferInput - The input parameters required to initiate the transfer process.
    * @return {Promise<IdResponse>} A promise resolving to an object containing the ID of the initiated transfer process.
    */
-  public async initiateTransferProcess(transferInput: TransferProcessInput): Promise<IdResponse> {
+  public async initiateTransferProcess(
+    transferInput: TransferProcessInput,
+  ): Promise<IdResponse & { ['@id']?: string; id?: string }> {
     const edcConfig = await firstValueFrom(this.stateService.currentEdcConfig$);
     if (!edcConfig) {
       throw new Error('No current EDC configuration found.');
@@ -192,9 +194,16 @@ export class ContractAndTransferService {
     const request = this.toLegacyTransferProcessRequest(transferInput);
     const headers = this.createManagementHeaders(edcConfig.apiToken);
 
-    return firstValueFrom(
-      this.http.post<IdResponse>(`${edcConfig.managementUrl}/v3/transferprocesses`, request, { headers }),
+    const response = await firstValueFrom(
+      this.http.post<IdResponse & { ['@id']?: string; id?: string }>(
+        `${edcConfig.managementUrl}/v3/transferprocesses`,
+        request,
+        { headers },
+      ),
     );
+
+    response.id = response.id ?? response['@id'];
+    return response;
   }
 
   private toLegacyTransferProcessRequest(transferInput: TransferProcessInput): LegacyTransferProcessRequest {
@@ -238,7 +247,15 @@ export class ContractAndTransferService {
    * @return {Promise<TransferProcess>} A promise that resolves to the transfer process details.
    */
   public async getTransferProcess(id: string): Promise<TransferProcess> {
-    return (await this.edc.getClient()).management.transferProcesses.get(id);
+    const process = await (await this.edc.getClient()).management.transferProcesses.get(id);
+    /* console.debug('[TransferProgressTrace] ContractAndTransferService.getTransferProcess', {
+      id,
+      state: process?.state,
+      type: process?.type,
+      transferType: process?.['transferType'],
+      edcTransferType: process?.['https://w3id.org/edc/v0.0.1/ns/transferType'],
+    }); */
+    return process;
   }
 
   /**

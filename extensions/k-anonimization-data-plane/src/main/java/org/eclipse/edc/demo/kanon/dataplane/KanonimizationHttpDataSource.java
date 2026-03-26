@@ -87,10 +87,6 @@ public class KanonimizationHttpDataSource implements DataSource {
                 return error("[K-ANON][DP] Missing baseUrl for request " + requestId);
             }
 
-            // LOG: muestra todas las propiedades recibidas desde el CP
-            monitor.info("[K-ANON][DP] requestId=%s processId=%s agreementId=%s received flowProperties=%s"
-                    .formatted(requestId, processId, agreementId, flowProperties));
-
             // 2. Resuelve señal contractual de anonimizacion y parametros tecnicos propagados desde Control Plane
             var resolvedAgreementId = firstNonBlank(agreementId, flowProperties.get("agreementId"));
             var enabledValue = firstNonBlank(
@@ -107,12 +103,8 @@ public class KanonimizationHttpDataSource implements DataSource {
             );
             var anonymizationEnabled = resolveAnonymizationEnabled(enabledValue, policyConfigUrl);
 
-            monitor.info("[K-ANON][DP] resolved requestId=%s processId=%s agreementId=%s assetId=%s enabledValue=%s policyConfigUrl=%s"
-                    .formatted(requestId, processId, resolvedAgreementId, assetId, enabledValue, policyConfigUrl));
-
             // 3. Si NO existe señal de anonimizacion -> retorna dataset original
             if (!anonymizationEnabled) {
-                monitor.info("[K-ANON][DP] detection=false requestId=%s processId=%s agreementId=%s assetId=%s".formatted(requestId, processId, resolvedAgreementId, assetId));
                 var original = client.downloadFile(datasetUrl);
                 var mediaType = mediaTypeFromUrl(datasetUrl);
                 var part = new InMemoryPart(fileNameFromUrl(datasetUrl), original, mediaType);

@@ -54,7 +54,6 @@ public class KanonimizationPolicyFunction implements AtomicConstraintRuleFunctio
 
         // 2. Si la politica NO requiere anonimizacion, permite la transferencia sin procesamiento
         if (!isTrue(rightOperand)) {
-            monitor.info("[K-ANON] detection=false - policy does not require anonymization");
             return true;
         }
         
